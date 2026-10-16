@@ -2,15 +2,15 @@
 
 **جيتك لها أثر**
 
-ATHAR helps visitors plan their day at Expo 2030 Riyadh. You tell it when you're arriving, how much time you have and what you're into, and it builds a plan with you through an AI chat. You can save stops to a Journey, follow the route on the Expo map, and take a photo tour of the Saudi pavilion.
+Expo 2030 Riyadh will be big, and planning a day there can feel overwhelming. ATHAR makes it simple: you tell it when you're arriving, how much time you have and what you're into, and it builds a plan with you through an AI chat. You can save stops to a Journey, follow the route on the Expo map, and explore pavilions in 360° before you go.
 
-> This is a prototype. Events, food places, venues and crowd levels are simulated, not official Expo 2030 data.
+> **Prototype.** Events, food places, venues and crowd levels are simulated, not official Expo 2030 data. The login screen is a demo, so any details work.
 
 ---
 
 ## Features
 
-- **Ask ATHAR:** an AI chat that builds a plan from the event and food data. If the AI is unavailable, built-in rules take over so the app still works.
+- **Ask ATHAR:** an AI chat that builds a day plan from the event and food data.
 - **Preferences:** visit date, arrival time, available hours, interests and country.
 - **Journeys:** save, rename and delete plans, with undo.
 - **Interactive map:** zoom into regions and follow your route stop by stop.
@@ -18,23 +18,40 @@ ATHAR helps visitors plan their day at Expo 2030 Riyadh. You tell it when you're
 
 ---
 
-## Tech stack
+## How it works
 
-- **Front end:** HTML, CSS and JavaScript in a single file, no framework
-- **Server:** Node.js and Express
-- **AI:** OpenRouter API (NVIDIA Nemotron 3 Super)
+**Ask ATHAR is a planning agent, not just a chatbot.** For each message, the app finds the matching events and food places in the dataset and sends them to the AI along with your plan and preferences. The AI replies with an answer and an action (build a plan, add stops or edit the plan). The app checks every suggestion is real and asks you before changing anything. The AI only uses the data it's given, so it can't make up events or times.
+
+**AI first, rules as backup.** If the AI is busy, slow or replies in the wrong format, the server retries once, then falls back to built-in rules, so visitors always get an answer.
+
+**The API key stays on the server.** The browser talks only to `/api/chat`, and the server adds the key before calling OpenRouter. Requests are also rate-limited and time out after 40 seconds.
 
 ---
 
-## Keeping the API key safe
+## Tech stack
 
-The key lives only on the server. The browser talks to the server's `/api/chat` endpoint, and the server adds the key before forwarding the request to OpenRouter, so the key never reaches the browser or the repo.
+| Layer     | Tools                                          |
+| --------- | ---------------------------------------------- |
+| Front end | HTML, CSS and JavaScript (single file, no framework) |
+| Server    | Node.js, Express                               |
+| AI        | OpenRouter API, NVIDIA Nemotron 3 Super        |
+| Config    | dotenv                                         |
 
-The server also limits requests per IP, rejects empty or very long prompts, and gives up on slow AI calls after 40 seconds.
+---
 
-## AI first, rules as backup
+## Project structure
 
-Every chat message tries the AI model first. The server checks the answer, and if the model is busy, errors out, is too slow or replies in the wrong format, it retries once while there is time. If it still fails, the chat answers with its built-in rules instead, so visitors always get a reply.
+```
+athar-expo2030/
+├── public/                  # everything the browser loads
+│   ├── index.html           # the full front end and simulated data
+│   └── explore/
+│       └── scenes/          # photos for the 360° view
+├── server.js                # serves the site and proxies AI requests
+├── .env.example             # settings template (copy to .env)
+├── package.json
+└── README.md
+```
 
 ---
 
@@ -44,30 +61,16 @@ You need [Node.js](https://nodejs.org/) 18 or newer. An [OpenRouter](https://ope
 
 ```bash
 npm install
-cp .env.example .env    # then add your key after OPENROUTER_API_KEY=
+cp .env.example .env    # add your key after OPENROUTER_API_KEY=
 npm start
 ```
 
 Open **http://localhost:3000**. The chip above the chat shows whether you're on **Live AI** or **Built-in rules**.
 
-| Variable             | Default           | What it does                          |
-| -------------------- | ----------------- | ------------------------------------- |
-| `OPENROUTER_API_KEY` | *(empty)*         | Turns on live AI                      |
-| `OPENROUTER_MODEL`   | `openrouter/free` | Which model to use (`.env.example` sets `nvidia/nemotron-3-super-120b-a12b:free`) |
-| `OPENROUTER_REASONING` | `off`           | `off` turns off the model's thinking for faster, complete replies |
-| `PORT`               | `3000`            | Server port                           |
-| `RATE_LIMIT_PER_MIN` | `20`              | Max AI requests per IP per minute     |
-
----
-
-## Project structure
-
-```
-athar-expo2030/
-├── public/
-│   ├── index.html         # front end and data
-│   └── explore/scenes/    # pavilion tour photos
-├── server.js              # serves the site and proxies AI requests
-├── .env.example           # settings template
-└── package.json
-```
+| Variable               | Default           | What it does                         |
+| ---------------------- | ----------------- | ------------------------------------ |
+| `OPENROUTER_API_KEY`   | *(empty)*         | Turns on live AI                     |
+| `OPENROUTER_MODEL`     | `openrouter/free` | Which model to use                   |
+| `OPENROUTER_REASONING` | `off`             | Keeps replies fast by skipping the model's thinking step |
+| `PORT`                 | `3000`            | Server port                          |
+| `RATE_LIMIT_PER_MIN`   | `20`              | Max AI requests per IP per minute    |
