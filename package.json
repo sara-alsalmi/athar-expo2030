@@ -1,0 +1,10 @@
+{
+  "name": "athar-expo2030",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "ATHAR Expo 2030 planning prototype with a server-side OpenRouter proxy",
+  "scripts": { "start": "node server.js" },
+  "engines": { "node": ">=18" },
+  "dependencies": { "dotenv": "^16.4.5", "express": "^4.19.2" }
+}
