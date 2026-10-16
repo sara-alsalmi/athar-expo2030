@@ -14,7 +14,7 @@ ATHAR helps visitors plan their day at Expo 2030 Riyadh. You tell it when you're
 - **Preferences:** visit date, arrival time, available hours, interests and country.
 - **Journeys:** save, rename and delete plans, with undo.
 - **Interactive map:** zoom into regions and follow your route stop by stop.
-- **Saudi pavilion tour:** eight photo scenes with cultural story markers and fullscreen mode.
+- **360° view:** explore Expo 2030 pavilions virtually from anywhere, with cultural stories along the way.
 
 ---
 
