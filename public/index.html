@@ -3899,7 +3899,7 @@ const _rpF=renderPlan;renderPlan=function(){try{applyForecast()}catch(err){conso
 // no random "live" changes: the forecast only changes when your plan or your progress changes
 liveTick=function(){};
 liveStamp=function(){const el=$('liveText'),c=$('liveChip');if(!el||!c)return;const lb=dateLbl(state.day);
- el.textContent='Crowd from check-ins'+(lb?' · '+lb:'');c.title='Crowd and queue come from visitors tapping “I’ve arrived” at each place. Simulated in this prototype.'};
+ el.textContent='Crowd from check-ins'+(lb?' · '+lb:'');c.title='Crowd and queue come from visitors tapping “I’ve arrived” at each place.'};
 {const n=$('liveNote');if(n)n.hidden=true}
 
 /* ---------- 2. The route map moves like a web map ---------- */
@@ -4001,7 +4001,7 @@ ${late?`<p class="nw-warn">At this pace you reach it about ${late} min after it 
 <div class="nw-help"><div class="ag-h"><b>ATHAR, on your route</b><small>You are at ${esc(fromN)} · ${window.tripNow&&tripNow()!=null?'now':'plan time'} ${fmt(now)}</small></div>
 <div class="nw-chips">${chip('late','Running late')}${chip('break','Need a break')}${chip('crowd','Too crowded')}${chip('skip','Skip this stop')}${chip('type','Ask something…')}</div>
 <div class="ag-body">${helpBody()}</div>
-<form class="nw-ask" id="nwForm" ${h&&h.k==='type'?'':'hidden'}><input id="nwInput" placeholder="For example: is there halal food near here?" aria-label="Ask ATHAR"/><button class="btn small" type="submit">Ask</button></form><div id="nwReply" class="nw-reply" hidden></div></div>${dots}${srcNote()}</div>`;
+<form class="nw-ask" id="nwForm" ${h&&h.k==='type'?'':'hidden'}><input id="nwInput" placeholder="For example: is there halal food near here?" aria-label="Ask ATHAR"/><button class="btn small" type="submit">Ask</button></form><div id="nwReply" class="nw-reply" hidden></div></div>${dots}</div>`;
  if(h&&h.k==='type'&&state.nwReply){const b=$('nwReply');b.hidden=false;b.innerHTML=state.nwReply}};
 // typed questions go to the AI; show only this answer, without internal ids
 nwWatch=function(){let n=0;const t=setInterval(()=>{const c=$('chatMessages');n++;if(!c)return clearInterval(t);
