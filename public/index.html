@@ -2300,7 +2300,7 @@ function jvSummary(){const D=state.days,gate=(sched(D[0]).g||{}).n,hrs=Math.roun
 drawAdj=function(){const c=$('chatMessages');if(!c)return;const old=c.querySelector('.prop');if(old)old.remove();const a=$('adjust');if(a)a.innerHTML='';const p=state.prop;if(!p)return;
  c.insertAdjacentHTML('beforeend',`<div class="bubble agent prop"><b>${escapeHTML(p.title)}</b><div class="pnote">Review before I change your plan.</div>${p.opts.map((o,i)=>`<div class="opt"><b>${escapeHTML(o.label)}</b><ul>${o.lines.map(l=>`<li>${escapeHTML(l)}</li>`).join('')}</ul><button class="btn small" data-x="ok" data-i="${i}">Apply this</button></div>`).join('')}<div class="acts"><button class="btn secondary small" data-x="no">Cancel</button></div></div>`);c.scrollTop=c.scrollHeight};
 const _ar=addRich;addRich=function(t,a){_ar(t,a);const c=$('chatMessages'),p=c.querySelector('.prop');if(p){c.appendChild(p)}c.scrollTop=c.scrollHeight};
-const _ax=applyX;applyX=function(op){_ax(op);const r=sched(state.plan,off(state.day));addRich(`Done: ${op.msg||'plan updated'}. Day ${state.day+1} now has ${state.plan.length} stops and finishes around ${fmt(r.end)}.`)};
+const _ax=applyX;applyX=function(op){_ax(op);if(window.applyForecast)applyForecast();const r=sched(state.plan,off(state.day));const ov=Math.round(r.used-r.av);addRich(`${location.hash==='#journey'?'From your route: ':'Done: '}${op.msg||'plan updated'}. Day ${state.day+1} now has ${state.plan.length} stops and ends at ${fmt(r.end)}, ${ov>5?ov+' min past the time you have.':'within the time you have.'}`,ov>5&&window.fitActs?fitActs(state.day):[])};
 </script><script>/* ===== v6: filters first, then prompt, then plan with fixed chat ===== */
 function jvPrefs(){const w=(WHO.find(x=>x[1]===state.who)||[''])[0],bits=[state.interests.join(', '),state.countries.length&&state.countries.length===countries.length?'All countries':state.countries.join(', '),w,state.ndays+' day'+(state.ndays>1?'s':''),state.timeChosen?state.minutes/60+' h a day':'',arrLbl()].filter(Boolean);$('promptPrefs').innerHTML=bits.map(b=>`<span class="tag">${escapeHTML(b)}</span>`).join(' ')}
 showStage=function(){const st=state.stage,chat=st==='chat',pr=st==='prompt';$('askIntake').style.display=chat?'none':'';$('askChat').style.display=chat?'':'none';document.querySelector('#askIntake .intake').style.display=(chat||pr)?'none':'';if(chat){renderPlan();drawAdj()}else syncIntake()};
@@ -2579,7 +2579,7 @@ saveJourney=function(){const n=state.days.flat().length;if(!n)return toast('Crea
  jvStore(a);state.jid=id;toast('Saved to your Journey');goTo('journey')};
 
 /* Manual-first: drawAdj's original renderer presents options without applying them. */
-document.addEventListener('click',e=>{if(!e.target.closest('[data-fit]'))return;const d=state.day,fd=fitDrop(state.days[d],off(d));
+document.addEventListener('click',e=>{if(!e.target.closest('[data-fit]'))return;const d=state.day,fd=fitDrop(state.days[d],off(d));fd.drop=fd.drop.filter(id=>!state.done.includes(id));
  if(!fd.drop.length)return toast('Everything left is a must-see. Ask ATHAR to move a stop to another day.');
  applyX({t:'late',day:d,min:0,drop:fd.drop,msg:'Dropped '+fd.drop.map(i=>EX(i).title).join(', ')+' so the day fits'})});
 const LV={last:Date.now()};
@@ -2642,7 +2642,8 @@ PLANS=plRead();
 if(PLANS)plApply(plCur().snap);
 else{PLANS={active:1,list:[{id:1,name:'Plan 1',snap:plSnap(),created:Date.now()}]};plWrite()}
 drawPlanBar();liveStamp();
-if(location.hash==='#planner')showStage();
+// draw the saved plan once the whole page has loaded: the map and search helpers are defined further down
+if(location.hash==='#planner'){if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>showStage());else showStage()}
 
 /* ---------- explore page: visual region summary, tour stories from your preferences ---------- */
 window.cwPrefs=()=>{const m={Heritage:'craft','Music & Dance':'craft',Food:'craft','Coffee & Tea':'craft',Art:'art',Technology:'art','Film & Stories':'art',Architecture:'architecture'};return[...new Set(state.interests.map(i=>m[i]).filter(Boolean))]};
@@ -2819,7 +2820,7 @@ aiPrompt=function(m,ret){const AL=['Art','Heritage','Music & Dance','Technology'
  const plan=state.days.flat().length?state.days.map((d,i)=>'Day '+(i+1)+(state.dates&&state.dates[i]?' ('+state.dates[i]+')':'')+': '+(sched(d,off(i)).it.filter(x=>x.k==='s').map(x=>fmt(x.t)+' '+x.e.title+' [id '+x.e.id+']').join('; ')||'empty')).join('\n'):'none yet';
  const system=`You are ATHAR, the planning agent for a prototype of Expo 2030 Riyadh. You chat with a visitor and help them plan.
 RULES
-1. Use ONLY the DATA rows in the visitor message. Never invent events, food places, venues, times, prices or facts. To recommend something, put its id in action.ids and name it exactly as in DATA.
+1. Use ONLY the DATA rows in the visitor message. Never invent events, food places, venues, times, prices or facts. To recommend something, put its id in action.ids and name it exactly as in DATA. Never write ids in the reply text: the visitor only sees names.
 2. If DATA has nothing that fits, say so in one sentence and ask one short question about what to change (country, date, topic or time).
 3. Never add anything yourself. When you suggest items, use action "add" with up to 3 ids and END your reply with a yes/no question such as "Want me to add it to your plan?". The app asks the visitor and checks time clashes, so do not promise a time.
 4. Use action "plan" only to build a NEW plan from preferences, "edit" to swap, remove, move or reschedule stops in the CURRENT PLAN, and "none" for plain answers.
@@ -2928,17 +2929,17 @@ if(typeof window.jMap==='function')window.jMap=function(L){if(!L||!L.length)retu
 
 <style id="athar-stability-and-full-day-plan">
 /* Stable controls: no pulsing, brightness filters, transforms, or animated hover state. */
-button,a,[role="button"],.chip,.ptab,.pm-card,.story-chip,.region-key,.primary-button,.secondary-button {
+button,a,[role="button"]:not(g),.chip,.ptab,.pm-card,.story-chip,.region-key,.primary-button,.secondary-button {
   animation: none !important;
   transition: color .12s ease, background-color .12s ease, border-color .12s ease !important;
 }
-button:hover,a:hover,[role="button"]:hover,.chip:hover,.ptab:hover,.pm-card:hover,.story-chip:hover,
+button:hover,a:hover,[role="button"]:not(g):hover,.chip:hover,.ptab:hover,.pm-card:hover,.story-chip:hover,
 .region-key:hover,.primary-button:hover,.secondary-button:hover {
   animation: none !important;
   filter: none !important;
   transform: none !important;
 }
-button:focus-visible,a:focus-visible,[role="button"]:focus-visible { outline: 2px solid #477d6b; outline-offset: 2px; }
+button:focus-visible,a:focus-visible,[role="button"]:not(g):focus-visible { outline: 2px solid #477d6b; outline-offset: 2px; }
 </style>
 <script id="athar-stability-guard">
 /* Do not globally rewrite button types: submit buttons inside forms must remain submit buttons.
@@ -2947,9 +2948,9 @@ button:focus-visible,a:focus-visible,[role="button"]:focus-visible { outline: 2p
 
 <style id="athar-interaction-stability">
 /* Stable, non-pulsing controls: no hover tween, transform, filter, or page-entry animation. */
-button,button:hover,button:active,button:focus,.btn,.btn:hover,.btn:active,.chip,.chip:hover,.chip:active,a,a:hover,[role="button"],[data-stop],[data-add],[data-x],[data-plan]{animation:none!important;transition:none!important;filter:none!important;transform:none!important;will-change:auto!important}
+button,button:hover,button:active,button:focus,.btn,.btn:hover,.btn:active,.chip,.chip:hover,.chip:active,a,a:hover,[role="button"]:not(g),[data-stop],[data-add],[data-x],[data-plan]{animation:none!important;transition:none!important;filter:none!important;transform:none!important;will-change:auto!important}
 .page.active,#askIntake .istep.is-active,#timeline.swap .timeline-item,.timeline-item,.timeline-item:hover{animation:none!important;transition:none!important;transform:none!important;filter:none!important}
-button:focus-visible,a:focus-visible,[role="button"]:focus-visible{outline:2px solid #b4774f!important;outline-offset:3px}
+button:focus-visible,a:focus-visible,[role="button"]:not(g):focus-visible{outline:2px solid #b4774f!important;outline-offset:3px}
 .px.pren{font-size:14px;line-height:1}
 .athar-inline-dialog{position:fixed;inset:0;z-index:99999;display:grid;place-items:center;padding:20px;background:rgba(14,25,22,.48)}
 .athar-inline-dialog .aid-panel{width:min(100%,420px);background:#fffdf7;color:#1b2929;border-radius:18px;padding:24px;box-shadow:0 18px 60px #0003}
@@ -3103,16 +3104,16 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 
 <style id="athar-interaction-stability">
 /* Keep hit targets stationary, even when hovered or selected. */
-button, .btn, .chip, .timeline-item, .card, [role="button"],
+button, .btn, .chip, .timeline-item, .card, [role="button"]:not(g),
 .mt-title [data-prename], .athar-language {
  transition: background-color .12s ease, border-color .12s ease, color .12s ease !important;
  animation: none !important;
 }
 button:hover, .btn:hover, .chip:hover, .timeline-item:hover, .card:hover,
-button:active, .btn:active, [role="button"]:hover {
+button:active, .btn:active, [role="button"]:not(g):hover {
  transform: none !important;
 }
-button:focus-visible, [role="button"]:focus-visible, select:focus-visible {
+button:focus-visible, [role="button"]:not(g):focus-visible, select:focus-visible {
  outline: 3px solid #d98754 !important;
  outline-offset: 2px;
 }
@@ -3369,4 +3370,949 @@ window.jMap=function(L){
 html body .page.active{animation:atharPageFade .35s ease-out!important}
 @media(prefers-reduced-motion:reduce){html body .page.active{animation:none!important}}
 </style>
+<style id="athar-route-nav">
+/* ===== Navigation track on the Ask ATHAR map ===== */
+/* The pavilion's play marker belongs to the Explore Map tour; it does nothing on the route map. */
+.pm-svg .pavilion-entry{display:none}
+.nv-stage{position:relative}
+.pm-svg path.nv-leg{fill:none;stroke:var(--lc);stroke-width:5;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1 10;vector-effect:non-scaling-stroke;opacity:.9;transition:opacity .2s}
+.pm-svg path.nv-leg.on{stroke-width:7;stroke-dasharray:14 9;opacity:1;animation:nvMarch 1s linear infinite}
+.pm-svg path.nv-leg.dim{opacity:.28}
+.pm-svg path.nv-leg.done{stroke:#9aa8a2;opacity:.5}
+@keyframes nvMarch{to{stroke-dashoffset:-23}}
+.nv-arrow path{fill:var(--lc);stroke:#fffdf5;stroke-width:1.5}
+.nv-arrow.dim{opacity:.25}
+.nv-lbl rect{fill:#fffdf5;stroke:#dcc9b2}.nv-lbl text{font-size:10px;font-weight:800;fill:#6b4a2f;text-anchor:middle}
+.nv-lbl.on rect{fill:#1b2929;stroke:#1b2929}.nv-lbl.on text{fill:#fff}
+.nv-lead{fill:none;stroke:#1b2929;stroke-width:1.5;stroke-dasharray:3 3;vector-effect:non-scaling-stroke;opacity:.5}
+.pm-stop.done circle{fill:#9aa8a2;opacity:1}
+.nv-bar{position:absolute;left:12px;top:12px;right:12px;max-width:620px;display:flex;align-items:center;gap:8px;padding:8px;border-radius:18px;background:#fffffff5;border:1px solid #d8dcce;box-shadow:0 10px 26px rgba(20,54,48,.16)}
+.nv-b{flex:none;width:36px;height:36px;border-radius:50%;border:1px solid #d6ddd6;background:#fff;color:var(--green);font-size:20px;line-height:1;display:grid;place-items:center;padding:0}
+.nv-b:hover:enabled{background:#eff5ef}.nv-b:disabled{opacity:.35;cursor:default}
+.nv-txt{flex:1;min-width:0;padding:0 4px}
+.nv-txt small{display:block;font-size:11px;font-weight:800;letter-spacing:.04em;color:#b4774f}
+.nv-txt b{display:block;font:800 14px/1.3 Manrope,sans-serif;letter-spacing:-.02em;color:#1b2929;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nv-arr{flex:none;border:0;border-radius:100px;background:var(--green);color:#fff;font-weight:800;font-size:12.5px;padding:10px 14px;white-space:nowrap}
+.nv-arr:hover{background:#0f3a32}.nv-arr.on{background:#e3f1e6;color:#2d6a52}
+.nv-tools{position:absolute;right:12px;bottom:12px;display:flex;gap:4px;padding:4px;border-radius:14px;background:#fffffff2;border:1px solid #d8dcce}
+.nv-tools button{width:34px;height:34px;border-radius:10px;border:1px solid var(--line);background:#fff;color:var(--green);font-size:18px;line-height:1;display:grid;place-items:center;padding:0}
+.nv-tools button:hover{background:#eff5ef}
+.nv-k{display:inline-block;width:18px;height:5px;border-radius:3px;background:var(--lc)}
+.nv-steps{padding:16px 18px 14px;background:#fff;border-top:1px solid #d8dcce}
+.nv-steps-h{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+.nv-steps-h b{font:800 16px Manrope,sans-serif;letter-spacing:-.02em}
+.nv-steps-h small{font-size:12.5px;color:var(--muted)}
+.nv-steps ol{list-style:none;margin:0;padding:0;position:relative}
+.nv-steps ol:before{content:"";position:absolute;left:15px;top:14px;bottom:14px;border-left:2px dashed #cfd9d1}
+.nv-steps li{position:relative;display:flex;align-items:center;gap:12px;padding:6px 0}
+.nv-si{position:relative;z-index:1;flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#fff;border:2px solid #e7d3c3;color:#b4774f;font-size:14px;font-weight:800}
+.nv-si svg{width:16px;height:16px}
+.nv-steps li.ring .nv-si{border-color:#cfd9d1;color:#53655d}
+.nv-steps li.arrive .nv-si{background:var(--green);border-color:var(--green);color:#fff}
+.nv-steps li b{display:block;font-size:13.5px;line-height:1.4;font-weight:700;color:#1b2929}
+.nv-steps li small{display:block;font-size:12px;color:var(--muted)}
+.nv-note{font-size:11px;color:var(--muted);margin:8px 0 0}
+.leg-row .lt{flex:1;min-width:0}
+.nv-legbtn{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:0;text-align:left;font:inherit;font-size:11.5px;color:var(--muted);cursor:pointer}
+.nv-legbtn span{margin-left:auto;flex:none;font-weight:800;color:var(--green);white-space:nowrap}
+.nv-legbtn:hover{color:#1b2929}
+.timeline-item.dn{opacity:.6}
+@media(max-width:760px){.nv-bar{position:static;max-width:none;margin:8px;padding:6px;gap:6px;box-shadow:none}.nv-b{width:32px;height:32px}.nv-txt b{font-size:12.5px}.nv-arr{padding:8px 10px;font-size:11.5px}.nv-tools{right:8px;top:8px;bottom:auto}.nv-legbtn span{display:none}}
+@media(prefers-reduced-motion:reduce){.pm-svg path.nv-leg.on{animation:none}}
+/* ===== Ask ATHAR = planning chat; Journey = route, map, directions and details ===== */
+#askChat .planner-shell{grid-template-columns:minmax(0,1fr) 420px}
+#askChat .planner-sidebar{grid-column:1;border-right:1px solid var(--line);border-radius:26px 0 0 26px}
+#askChat .planner-main{grid-column:2;border-radius:0 26px 26px 0;padding:26px 24px}
+#askChat .planner-main .main-top{flex-direction:column;align-items:stretch;gap:12px}
+#askChat .planner-main .mt-acts{justify-content:flex-start;flex-wrap:wrap}
+#askSummary{margin-top:18px}
+.as-day+.as-day{margin-top:14px}
+.as-dh{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#bc734d;margin-bottom:6px}
+.as-list{list-style:none;margin:0;padding:0;border:1px solid var(--line);border-radius:18px;overflow:hidden}
+.as-list li{display:flex;align-items:center;gap:10px;padding:11px 14px;background:#fff}
+.as-list li+li{border-top:1px solid var(--line)}
+.as-t{flex:none;width:44px;font-size:12.5px;font-weight:800;color:#53655d;font-variant-numeric:tabular-nums}
+.as-n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--rc,#174c42);color:#fff;font-size:11.5px;font-weight:800;display:grid;place-items:center}
+.as-list b{display:block;font-size:13.5px;line-height:1.3}
+.as-list small{display:block;font-size:11.5px;color:var(--muted)}
+.as-list em{font-style:normal;color:#a2411c;font-weight:800}
+.as-none{color:var(--muted);font-size:13px}
+.as-cta{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin-top:16px;text-align:center}
+.as-cta span{font-size:12px;color:var(--muted)}
+.as-empty{text-align:center;border:1px dashed #cbd6ce;border-radius:18px;padding:30px 18px}
+.as-empty span{display:block;font-size:26px;color:#b4774f}
+.as-empty b{font:800 16px Manrope,sans-serif}
+.as-empty p{font-size:13px;color:var(--muted);line-height:1.55;margin:6px 0 0}
+.rv{padding-top:40px}
+.rv-head{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;flex-wrap:wrap}
+.rv-title h2{margin:6px 0 6px;font-size:clamp(28px,3vw,38px)}
+.rv-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.rv-plans{margin:14px 0 0}
+#rvBody{margin-top:6px}
+#rvBody .pmap{margin-top:16px}
+.rv-empty{text-align:center;border:1px dashed #cbd6ce;border-radius:22px;padding:42px 20px;margin-top:18px;background:#fff}
+.rv-empty span{display:block;font-size:30px;color:var(--green)}
+.rv-empty b{font:800 18px Manrope,sans-serif}
+.rv-empty p{color:var(--muted);font-size:13.5px}
+.rv-sep{margin-top:46px;padding-top:26px;border-top:1px solid var(--line)}
+.rv-sep+#journalView .jwrap{padding-top:10px}
+@media(max-width:900px){#askChat .planner-shell{grid-template-columns:1fr}#askChat .planner-sidebar{border-right:0;border-radius:26px 26px 0 0}#askChat .planner-main{grid-column:1;grid-row:2;border-radius:0 0 26px 26px}}
+/* ===== Ask ATHAR: chat beside the proposed plan ===== */
+#askChat #savePlan2{display:none}
+.ask-st{display:inline-block;font-size:11.5px;font-weight:800;padding:5px 10px;border-radius:100px;background:#fbf1e6;color:#a2541f;border:1px solid #f0dcc6;align-self:flex-start}
+.ask-st.ok{background:#e3f1e6;color:#2d6a52;border-color:#c7e2cf}
+.ask-st[hidden]{display:none}
+#askPlan{margin-top:14px}
+.ap-ver{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#bc734d}
+/* short note in the chat for each version */
+#askChat .chat .bubble.pnote{display:flex;flex-direction:column;gap:2px;background:#fff;border:1px solid #d8dcce;padding:10px 14px}
+.pnote b{font-size:13px;color:#1b2929}.pnote span{font-size:12px;color:var(--muted)}
+.pc-diff{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.pc-diff span{font-size:11.5px;font-weight:700;padding:3px 9px;border-radius:100px}
+.pd-add{background:#e3f1e6;color:#2d6a52}.pd-rem{background:#fbe9e4;color:#a2411c;text-decoration:line-through}.pd-mov{background:#eef1ee;color:#53655d}
+/* plan list */
+.pc-day{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#53655d;margin:14px 0 6px}
+.pc-list{list-style:none;margin:12px 0 0;padding:0;border:1px solid var(--line);border-radius:16px;overflow:hidden}
+.pc-day+.pc-list{margin-top:0}
+.pc-list li+li{border-top:1px solid var(--line)}
+.pc-list button{display:flex;align-items:center;gap:10px;width:100%;padding:10px 12px;border:0;background:#fff;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.pc-list button:hover{background:#f6f8f4}
+.pc-t{flex:none;width:42px;font-size:12.5px;font-weight:800;color:#53655d;font-variant-numeric:tabular-nums}
+.pc-n{flex:none;width:24px;height:24px;border-radius:50%;background:var(--rc,#174c42);color:#fff;font-size:11.5px;font-weight:800;display:grid;place-items:center}
+.pc-x{flex:1;min-width:0}
+.pc-x b{display:block;font-size:13.5px;line-height:1.3;color:#1b2929}
+.pc-x small{display:block;font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pc-x em{font-style:normal;color:#a2411c;font-weight:800}
+.pc-cr{flex:none;font-style:normal;font-size:10.5px;font-weight:800;padding:3px 8px;border-radius:100px}
+.pc-cr.lo{background:#e3f1e6;color:#2d6a52}.pc-cr.md{background:#fbf1e6;color:#a2541f}.pc-cr.hi{background:#fbe9e4;color:#a2411c}
+.pc-none{padding:12px;color:var(--muted);font-size:13px}
+.pc-acts{display:flex;flex-direction:column;align-items:stretch;gap:6px;margin-top:16px;text-align:center}
+.pc-hint{font-size:12px;color:var(--muted)}
+.pc-sugs{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:8px}
+.pc-sugs .chip{font-size:12px;padding:6px 11px}
+.pc-done{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:14px;padding:10px 12px;border-radius:14px;background:#e3f1e6;color:#2d6a52;font-size:13px;font-weight:700}
+/* the big cards of the earlier version are not used any more */
+.bubble.pcard{display:none}
+.rv-wait .row{gap:8px;margin-top:14px;flex-wrap:wrap}
+
+/* ===== Journey: next stop, help from ATHAR and progress ===== */
+#rvNow{margin-top:18px}
+.nw{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:0;background:#fff;border:1px solid #d8dcce;border-radius:24px;overflow:hidden;box-shadow:0 10px 26px rgba(20,54,48,.07)}
+.nw-main{padding:22px 24px}
+.nw-main small{font-size:11px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;color:#bc734d}
+.nw-main h3{font:800 clamp(20px,2.2vw,26px)/1.2 Manrope,sans-serif;letter-spacing:-.02em;margin:6px 0 2px;color:#1b2929}
+.nw-sub{font-size:13px;color:var(--muted);margin:0}
+.nw-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:16px}
+.nw-facts>div{background:#f6f8f4;border-radius:14px;padding:10px 12px;min-width:0}
+.nw-facts span{display:block;font-size:11px;font-weight:700;color:var(--muted)}
+.nw-facts b{display:block;font:800 18px/1.25 Manrope,sans-serif;color:#1b2929;font-variant-numeric:tabular-nums}
+.nw-facts em{display:block;font-style:normal;font-size:11px;color:var(--muted)}
+.nw-facts b.cr-empty{color:#2d6a52}.nw-facts b.cr-moderate{color:#a2541f}.nw-facts b.cr-crowded{color:#a2411c}
+.nw-warn{margin:12px 0 0;padding:9px 12px;border-radius:12px;background:#fbe9e4;color:#a2411c;font-size:12.5px;font-weight:700}
+.nw-acts{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:16px}
+.nw-then{font-size:12.5px;color:var(--muted);margin-left:4px}
+.nw-help{padding:22px 22px;background:#f4f7f2;border-left:1px solid #e1e6dd}
+.nw-help>b{display:block;font:800 14px Manrope,sans-serif;color:#1b2929}
+.nw-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.nw-chips .chip{font-size:12px;padding:7px 12px;background:#fff}
+.nw-ask{display:flex;gap:6px;margin-top:10px}
+.nw-ask[hidden]{display:none}
+.nw-ask input{flex:1;min-width:0;border:1px solid var(--line);border-radius:100px;padding:9px 14px;font:inherit;font-size:13px;background:#fff}
+.nw-reply{margin-top:12px;display:flex;flex-direction:column;gap:6px;max-height:260px;overflow:auto}
+.nw-reply[hidden]{display:none}
+.nw-msg{background:#fff;border:1px solid #e1e6dd;border-radius:14px;padding:10px 12px;font-size:13px;line-height:1.5;white-space:pre-line}
+.nw-msg.note{white-space:normal}.nw-msg.note b{display:block;font-size:12.5px}.nw-msg.note span{font-size:12px;color:var(--muted)}
+.nw-msg .acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;white-space:normal}
+.nw-think{font-size:13px;color:var(--muted);font-style:italic}
+.nw-prog{grid-column:1/-1;display:flex;align-items:center;padding:12px 24px;border-top:1px solid #e1e6dd;overflow-x:auto}
+.nw-prog i{flex:1;min-width:14px;height:2px;background:#d8dcce}
+.nw-dot{flex:none;width:28px;height:28px;border-radius:50%;border:2px solid #cfd9d1;background:#fff;color:#53655d;font-size:12px;font-weight:800;display:grid;place-items:center;padding:0;cursor:pointer}
+.nw-dot.dn{background:#9aa8a2;border-color:#9aa8a2;color:#fff}
+.nw-dot.cur{background:var(--green);border-color:var(--green);color:#fff;box-shadow:0 0 0 4px #d6e8dc}
+.nw-end .nw-main{grid-column:1/-1}
+/* you are here */
+.nv-here .nv-pulse{fill:#2f7cf6;opacity:.18;transform-box:fill-box;transform-origin:center;animation:nvPulse 2s ease-out infinite}
+.nv-here .nv-dot{fill:#2f7cf6;stroke:#fff;stroke-width:3}
+.nv-here rect{fill:#2f7cf6}.nv-here text{fill:#fff;font-size:10.5px;font-weight:800;text-anchor:middle}
+@keyframes nvPulse{0%{transform:scale(.5);opacity:.35}100%{transform:scale(1.4);opacity:0}}
+@media(prefers-reduced-motion:reduce){.nv-here .nv-pulse{animation:none}}
+@media(max-width:900px){.nw{grid-template-columns:1fr}.nw-help{border-left:0;border-top:1px solid #e1e6dd}.nw-facts{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.nw-main,.nw-help{padding:16px}.nw-prog{padding:10px 16px}.pc-cr{display:none}.nw-acts .btn{flex:1}}
+.nw-msg .mini{border:1px solid #cfd9d1;background:#fff;border-radius:100px;padding:5px 11px;font:inherit;font-size:12px;font-weight:700;color:var(--green);cursor:pointer}
+.nw-msg .mini:hover{background:#eff5ef}
+</style>
+<script id="athar-route-nav-logic">
+/* ===== Navigation track: routes follow the map's walkways, with turn-by-turn directions ===== */
+/* Walkways come from the venue drawing (streets inside regions, the Grand Ring and the entrance roads).
+   It is a concept layout, so routes and times are estimates, not live indoor navigation. */
+const NAV=(function(){
+ const segs=[],poly=(pts,kind,closed)=>{for(let i=0;i<pts.length-(closed?0:1);i++)segs.push({a:pts[i],b:pts[(i+1)%pts.length],kind})};
+ const parse=d=>d.split('M').filter(Boolean).map(s=>s.split('L').map(p=>p.trim().split(/\s+/).map(Number)));
+ parse('130 245L470 405L765 165M195 340L837 341M391 130L425 575M670 135L636 578M325 474L786 454M311 269L793 266').forEach(p=>poly(p,'walk'));
+ parse('291 304L267 298L167 259M839 287L897 284L969 283M578 604L574 612').forEach(p=>poly(p,'road'));
+ const ring=[];for(let i=0;i<72;i++){const t=i/72*2*Math.PI;ring.push([578+280*Math.cos(t),353+251*Math.sin(t)])}poly(ring,'ring',true);
+ const land=(x,y)=>((x-578)/286)**2+((y-353)/257)**2<=1||CW.MAP_REGIONS.some(r=>CW.inRegion(r.id,x,y));
+ // split each walkway where it meets another one, and every 20 map units
+ const ts=segs.map(()=>[0,1]);
+ const cross=(p,q,r,s)=>{const d=(q[0]-p[0])*(s[1]-r[1])-(q[1]-p[1])*(s[0]-r[0]);if(Math.abs(d)<1e-9)return null;
+  const t=((r[0]-p[0])*(s[1]-r[1])-(r[1]-p[1])*(s[0]-r[0]))/d,u=((r[0]-p[0])*(q[1]-p[1])-(r[1]-p[1])*(q[0]-p[0]))/d;return t>=0&&t<=1&&u>=0&&u<=1?[t,u]:null};
+ for(let i=0;i<segs.length;i++)for(let j=i+1;j<segs.length;j++){const h=cross(segs[i].a,segs[i].b,segs[j].a,segs[j].b);if(h){ts[i].push(h[0]);ts[j].push(h[1])}}
+ const nodes=[],keys=new Map(),adj=[],edges=[];
+ const node=(x,y)=>{const k=Math.round(x*2)+','+Math.round(y*2);let i=keys.get(k);if(i==null){i=nodes.length;keys.set(k,i);nodes.push([x,y]);adj.push([])}return i};
+ segs.forEach((s,i)=>{const len=Math.hypot(s.b[0]-s.a[0],s.b[1]-s.a[1]),n=Math.ceil(len/20);for(let k=1;k<n;k++)ts[i].push(k/n);
+  const T=[...new Set(ts[i].map(t=>+t.toFixed(5)))].sort((p,q)=>p-q),at=t=>[s.a[0]+(s.b[0]-s.a[0])*t,s.a[1]+(s.b[1]-s.a[1])*t];
+  for(let k=0;k<T.length-1;k++){const p=at(T[k]),q=at(T[k+1]),m=at((T[k]+T[k+1])/2);
+   if(s.kind==='walk'&&!land(m[0],m[1]))continue; // streets are only walkable where they are drawn on land
+   const u=node(p[0],p[1]),v=node(q[0],q[1]);if(u===v)continue;adj[u].push([v,s.kind]);adj[v].push([u,s.kind]);edges.push([u,v,s.kind])}});
+ // Pavilion areas and plazas are open ground: a 30-unit walkable grid over all land, joined to the walkways.
+ // Open ground costs more than walkways and the Ring (building blocks sit between them), so longer
+ // walks follow the walkways and short links cross open ground.
+ const regionOf=p=>{const r=CW.MAP_REGIONS.find(g=>CW.inRegion(g.id,p[0],p[1]));return r?r.id:null};
+ const lines=nodes.length,G=30,grid=new Map(),link2=(u,v,k)=>{if(u===v||adj[u].some(([w])=>w===v))return;adj[u].push([v,k]);adj[v].push([u,k]);edges.push([u,v,k])};
+ for(let x=60;x<=1050;x+=G)for(let y=60;y<=690;y+=G)if(land(x,y))grid.set(x+','+y,node(x,y));
+ grid.forEach((i,key)=>{const[x,y]=key.split(',').map(Number);for(const[dx,dy]of[[G,0],[0,G],[G,G],[G,-G]]){const j=grid.get((x+dx)+','+(y+dy));if(j!=null&&land(x+dx/2,y+dy/2))link2(i,j,'plaza')}});
+ for(let v=0;v<lines;v++){const[a,b]=nodes[v];grid.forEach((i,key)=>{const[x,y]=key.split(',').map(Number);if(Math.hypot(x-a,y-b)<=G*1.1)link2(v,i,'plaza')})}
+ // places attach to the largest connected network
+ const comp=new Array(nodes.length).fill(-1);let main=-1,size=0;
+ for(let i=0;i<nodes.length;i++){if(comp[i]>=0)continue;const st=[i];comp[i]=i;let n=0;while(st.length){const u=st.pop();n++;for(const[v]of adj[u])if(comp[v]<0){comp[v]=i;st.push(v)}}if(n>size){size=n;main=i}}
+ const net=edges.filter(e=>comp[e[0]]===main);
+ // map units to metres, the same scale as the planner's estimates
+ const um=(a,b)=>Math.hypot((a[0]-b[0])/10.8,(a[1]-b[1])/7.2)*24;
+ function attach(P){let b=null;for(const e of net){const a=nodes[e[0]],c=nodes[e[1]],dx=c[0]-a[0],dy=c[1]-a[1],l2=dx*dx+dy*dy;
+  const t=l2?Math.max(0,Math.min(1,((P[0]-a[0])*dx+(P[1]-a[1])*dy)/l2)):0,q=[a[0]+dx*t,a[1]+dy*t],d=Math.hypot(P[0]-q[0],P[1]-q[1]);if(!b||d<b.d)b={d,q,e}}return b}
+ function route(A,B){const direct={pts:[A,B],kinds:['walk'],m:um(A,B)},ra=regionOf(A);
+  // short hops inside one pavilion area are walked straight across the plaza
+  if(um(A,B)<45||(ra&&ra===regionOf(B)&&Math.hypot(A[0]-B[0],A[1]-B[1])<120))return direct;
+  const qa=attach(A),qb=attach(B);if(!qa||!qb)return direct;
+  const N=nodes.length,iA=N,iQA=N+1,iQB=N+2,iB=N+3,pos=i=>i<N?nodes[i]:[A,qa.q,qb.q,B][i-N],extra=new Map();
+  const link=(u,v,k)=>{for(const[x,y]of[[u,v],[v,u]]){if(!extra.has(x))extra.set(x,[]);extra.get(x).push([y,k])}};
+  link(iA,iQA,'access');link(iQB,iB,'access');link(iQA,qa.e[0],qa.e[2]);link(iQA,qa.e[1],qa.e[2]);link(iQB,qb.e[0],qb.e[2]);link(iQB,qb.e[1],qb.e[2]);
+  if(qa.e===qb.e)link(iQA,iQB,qa.e[2]);
+  // Dijkstra with a small binary heap
+  const dist=new Map([[iA,0]]),prev=new Map(),done=new Set(),heap=[[0,iA]];
+  const push=x=>{heap.push(x);let i=heap.length-1;while(i){const p=(i-1)>>1;if(heap[p][0]<=heap[i][0])break;[heap[p],heap[i]]=[heap[i],heap[p]];i=p}};
+  const pop=()=>{const top=heap[0],last=heap.pop();if(heap.length){heap[0]=last;let i=0;for(;;){const l=2*i+1,r=l+1;let m=i;if(l<heap.length&&heap[l][0]<heap[m][0])m=l;if(r<heap.length&&heap[r][0]<heap[m][0])m=r;if(m===i)break;[heap[m],heap[i]]=[heap[i],heap[m]];i=m}}return top};
+  while(heap.length){const[du,u]=pop();if(done.has(u))continue;if(u===iB)break;done.add(u);
+   for(const[v,k]of(u<N?adj[u]:[]).concat(extra.get(u)||[])){if(done.has(v))continue;const nd=du+um(pos(u),pos(v))*(k==='plaza'?1.6:1);if(nd<(dist.has(v)?dist.get(v):Infinity)){dist.set(v,nd);prev.set(v,[u,k]);push([nd,v])}}}
+  if(!dist.has(iB))return direct;
+  const raw=[pos(iB)],rk=[];for(let c=iB;c!==iA;){const[p,k]=prev.get(c);rk.push(k);c=p;raw.push(pos(c))}raw.reverse();rk.reverse();
+  // smooth short zigzags across open ground; the Ring and entrance roads keep their shape
+  const free=(a,b)=>{const n=Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/8);for(let i=1;i<n;i++){const t=i/n;if(!land(a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t))return false}return true};
+  const pts=[raw[0]],kinds=[];for(let i=0;i<raw.length-1;){let j=raw.length-1;for(;j>i+1;j--)if(Math.hypot(raw[j][0]-raw[i][0],raw[j][1]-raw[i][1])<=85&&rk.slice(i,j).every(k=>k!=='ring'&&k!=='road')&&free(raw[i],raw[j]))break;kinds.push(j>i+1?'walk':rk[i]);pts.push(raw[j]);i=j}
+  let m=0;for(let i=0;i<pts.length-1;i++)m+=um(pts[i],pts[i+1]);return m>um(A,B)*2.6?direct:{pts,kinds,m}}
+ return{route,um,nodes,net};
+})();
+const NAVC=new Map();
+function navLeg(a,b){const A=PX(a),B=PX(b),k=A.map(v=>v.toFixed(1))+'>'+B.map(v=>v.toFixed(1));let r=NAVC.get(k);if(!r){r=NAV.route(A,B);NAVC.set(k,r)}return r}
+// Timings use the walked path, so the whole plan (fit, conflicts, end time) agrees with the map.
+sched=function(l,o=0){let t=state.start+o,it=[],g=l.length?gateFor(l[0]):null;l.forEach((e,i)=>{const from=i?l[i-1]:g;
+  if(from){const nv=navLeg(from,e),m=Math.max(3,Math.round(nv.m/80*state.busy));it.push({k:'w',t,m,d:Math.round(nv.m/10)*10,e,from,nv});t+=m}
+  let cf=null;if(state.fixed.includes(e.id)){const T=tmin(e);if(T!=null){if(t<T){it.push({k:'wait',t,m:T-t,T});t=T}else if(t>T+15)cf={T,late:t-T}}}
+  const du=(Math.round(e.duration*PF())+(e.wait||0));it.push({k:'s',t,m:du,e,i,cf});t+=du});
+ const used=t-state.start-o,av=state.minutes-o;it.forEach(x=>x.fit=x.t+x.m-state.start-o<=av+5);return{it,used,av,end:t,g}};
+
+/* ---------- turn-by-turn directions with landmarks ---------- */
+const NAV_LM=[['the Forest of Tranquility',[557,357]],['the Water Plaza',[574,612]],...Object.entries(CSPOT).map(([c,p])=>['the '+c+' pavilion',p])];
+const navAngle=(a,b)=>((a-b+540)%360)-180;
+function navSteps(x){const nv=x.nv||navLeg(x.from,x.e),P=nv.pts,K=nv.kinds,g=[];
+ for(let i=0;i<P.length-1;i++){const a=P[i],b=P[i+1],k=K[i]==='access'||K[i]==='plaza'?'walk':K[i],len=NAV.um(a,b);if(len<.5)continue;const h=wfBearing(a,b),last=g[g.length-1];
+  if(last&&last.k===k&&(k==='ring'||Math.abs(navAngle(h,last.h))<35)){last.pts.push(b);last.m+=len;last.h=h}else g.push({k,pts:[a,b],m:len,h})}
+ for(let i=g.length-1;i>0;i--)if(g[i].m<15){g[i-1].pts.push(...g[i].pts.slice(1));g[i-1].m+=g[i].m;g.splice(i,1)}
+ if(g.length>1&&g[0].m<15){g[1].pts.unshift(...g[0].pts.slice(0,-1));g[1].m+=g[0].m;g.shift()}
+ const name=x.from.n||x.from.title,seen=new Set([x.e.country,x.from.country].filter(Boolean)),out=[];
+ g.forEach((s,i)=>{const a=s.pts[0],b=s.pts[s.pts.length-1],dir=wfDir(a,b),mid=s.pts[Math.floor(s.pts.length/2)],rg=CW.MAP_REGIONS.find(r=>CW.inRegion(r.id,mid[0],mid[1]));
+  let turn='';if(i){const pv=g[i-1].pts,d=navAngle(wfBearing(a,s.pts[1]),wfBearing(pv[pv.length-2],pv[pv.length-1]));turn=Math.abs(d)<25?'Continue':d>0?(d>130?'Make a sharp right':'Turn right'):(d<-130?'Make a sharp left':'Turn left')}
+  let t=i===0?`Leave ${escapeHTML(name)} heading ${dir}`+(s.k==='ring'?' on the Grand Ring':s.k==='road'?' along the entrance road':'')
+   :s.k==='ring'?`${turn} onto the Grand Ring and follow it ${dir}`:s.k==='road'?`${turn} along the entrance road heading ${dir}`:`${turn} ${dir}${rg?' through '+rg.name:''}`;
+  const lm=NAV_LM.filter(([n])=>!seen.has(n.replace(/^the | pavilion$/g,''))).map(([n,p])=>({n,p,d:Math.min(...s.pts.map(q=>Math.hypot(q[0]-p[0],q[1]-p[1])))})).filter(o=>o.d<50).sort((p,q)=>p.d-q.d)[0];
+  if(lm){const cx=(b[0]-a[0])*(lm.p[1]-a[1])-(b[1]-a[1])*(lm.p[0]-a[0]);t+=`, passing ${lm.n} on your ${cx>0?'right':'left'}`;seen.add(lm.n.replace(/^the | pavilion$/g,''))}
+  out.push({t,k:s.k,head:wfBearing(a,b),len:fmtD(Math.max(10,Math.round(s.m/10)*10))})});
+ out.push({t:`Arrive at ${escapeHTML(x.e.title)}`,sub:escapeHTML(x.e.country)+' pavilion area',arrive:true});
+ return out}
+// Itinerary walking rows: a short summary that opens this walk on the map.
+legHint=function(x){const a=PX(x.from),b=PX(x.e),st=navSteps(x),pass=st.map(s=>(s.t.match(/passing (.+?) on your/)||[])[1]).find(Boolean),ring=(x.nv||{kinds:[]}).kinds.includes('ring');
+ return`<button type="button" class="nv-legbtn" data-nvleg="${x.e.id}">${x.d<40?'Next door to ':'Head '+wfDir(a,b)+' to '}${escapeHTML(x.e.title)}${ring?' · via the Grand Ring':''}${pass?' · past '+pass:''} · ~${x.m} min<span aria-hidden="true">Show route →</span></button>`};
+
+/* ---------- the route map ---------- */
+const NAV_CROWD={Empty:'#2d8a5f',Moderate:'#d99a1b',Crowded:'#d4572a'};
+function navFit(pts,pad){const xs=pts.map(p=>p[0]),ys=pts.map(p=>p[1]);let x0=Math.min(...xs)-pad,x1=Math.max(...xs)+pad,y0=Math.min(...ys)-pad,y1=Math.max(...ys)+pad;
+ let w=Math.max(x1-x0,400),h=Math.max(y1-y0,250);if(w/h>1.6)h=w/1.6;else w=h*1.6;if(w>1080){w=1080;h=675}const cx=(x0+x1)/2,cy=(y0+y1)/2;
+ return[Math.max(0,Math.min(1080-w,cx-w/2)),Math.max(0,Math.min(720-h,cy-h/2)),w,h]}
+function navAlong(pts){const seg=[];let tot=0;for(let i=0;i<pts.length-1;i++){const l=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]);seg.push(l);tot+=l}
+ return{tot,at:d=>{for(let i=0;i<seg.length;i++){if(d<=seg[i]||i===seg.length-1){const t=seg[i]?Math.min(1,d/seg[i]):0,a=pts[i],b=pts[i+1];return{p:[a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t],h:wfBearing(a,b)}}d-=seg[i]}}}}
+renderMap=function(id,plan){const el=$(id);if(!el||id!=='plannerMap')return;
+ const L=plan||[],r=sched(L,off(state.day)),g=r.g;if(state.selected>=L.length)state.selected=0;
+ const legs=r.it.filter(x=>x.k==='w'),sel=state.selected,cur=legs.find(x=>x.e===L[sel]),focus=state.pmMode==='leg'&&cur;
+ // stops sharing a spot fan out so every number is visible
+ const disp=new Map(),placed=[];L.forEach(e=>{let[x,y]=PX(e);const n=placed.filter(p=>Math.hypot(p[0]-x,p[1]-y)<22).length;if(n){const a=n*2.1;x+=Math.cos(a)*22;y+=Math.sin(a)*22}disp.set(e.id,[x,y]);placed.push([x,y])});
+ const legPts=x=>{const p=x.nv.pts.slice(),f=x.from.id!=null?disp.get(x.from.id):null;if(f)p[0]=f;p[p.length-1]=disp.get(x.e.id);return p};
+ const vb=state.pmView||(L.length?navFit(focus?legPts(cur):legs.flatMap(legPts).concat(L.map(e=>disp.get(e.id))),focus?80:60):[70,60,960,600]);state._pmVB=vb;
+ const k=vb[2]/960,f1=v=>v.toFixed(1);let o='';
+ legs.forEach(x=>{const p=legPts(x),on=x===cur,dn=state.done.includes(x.e.id),c=NAV_CROWD[x.e.traffic]||'#b4774f',cls='nv-leg'+(on?' on':'')+(dn?' done':'')+(focus&&!on?' dim':'');
+  o+=`<path class="${cls}" style="--lc:${c}" d="M${p.map(q=>f1(q[0])+' '+f1(q[1])).join(' L')}"/>`;
+  const al=navAlong(p),gap=95*k;for(let d=gap*.6;d<al.tot-gap*.3;d+=gap){const a=al.at(d);o+=`<g class="nv-arrow${on?' on':''}${focus&&!on?' dim':''}" style="--lc:${c}" transform="translate(${f1(a.p[0])} ${f1(a.p[1])}) rotate(${a.h.toFixed(0)}) scale(${k.toFixed(3)})"><path d="M0-7L6 5L0 2L-6 5Z"/></g>`}
+  if((on||!focus)&&x.d>=40){const m=al.at(al.tot/2).p,t=fmtD(x.d)+' · '+x.m+' min',w=t.length*6.2+16;o+=`<g class="nv-lbl${on?' on':''}" transform="translate(${f1(m[0])} ${f1(m[1])}) scale(${k.toFixed(3)})"><rect x="${-w/2}" y="-10" width="${w}" height="20" rx="10"/><text y="4">${t}</text></g>`}});
+ o+=GATES.map(q=>`<g class="pm-gate${g&&g.id===q.id?' rec':''}" transform="translate(${q.px} ${q.py}) scale(${k.toFixed(3)})"><title>${q.n}</title><rect x="-27" y="-12" width="54" height="24" rx="7"/><text y="4">${q.n.split(' –')[0]}</text></g>`).join('');
+ L.forEach((e,i)=>{const[x,y]=disp.get(e.id),[tx,ty]=PX(e),c=(CW.regionById(e.region)||{}).color||'#174c42',dn=state.done.includes(e.id);
+  if(Math.hypot(tx-x,ty-y)>1)o+=`<path class="nv-lead" d="M${f1(tx)} ${f1(ty)}L${f1(x)} ${f1(y)}"/>`;
+  o+=`<g class="pm-stop${i===sel?' sel':''}${dn?' done':''}" data-mapstop="${i}" role="button" tabindex="0" aria-label="Stop ${i+1}: ${escapeHTML(e.title)}${dn?', visited':''}" transform="translate(${f1(x)} ${f1(y)}) scale(${k.toFixed(3)})" style="--rc:${c}"><title>${escapeHTML(e.title)}</title><circle r="${i===sel?17:14}"/><text y="5">${dn?'✓':i+1}</text></g>`});
+ // where the visitor is now: the start of the walk being followed
+ if(cur&&!state.done.includes(cur.e.id)){const h=legPts(cur)[0];o+=`<g class="nv-here" transform="translate(${f1(h[0])} ${f1(h[1])}) scale(${k.toFixed(3)})" aria-label="You are here"><circle class="nv-pulse" r="20"/><circle class="nv-dot" r="8"/><g transform="translate(0 24)"><rect x="-21" y="-10" width="42" height="20" rx="10"/><text y="4">You</text></g></g>`}
+ const se=L[sel];if(se){const[x,y]=disp.get(se.id),t=se.title.length>36?se.title.slice(0,35)+'…':se.title,w=t.length*6.3+24;o+=`<g class="pm-tip" transform="translate(${f1(x)} ${f1(y-36*k)}) scale(${k.toFixed(3)})"><rect x="${-w/2}" y="-13" width="${w}" height="26" rx="13"/><text y="4">${escapeHTML(t)}</text></g>`}
+ let bar='',steps='';
+ if(cur){const a=PX(cur.from),b=PX(cur.e);
+  bar=`<div class="nv-bar"><button type="button" class="nv-b" data-nv="prev" aria-label="Previous walk" ${sel<=0?'disabled':''}>‹</button><div class="nv-txt"><small>Walk ${sel+1} of ${L.length} · ${fmtD(cur.d)} · ${cur.m} min</small><b>${cur.d<40?'Next door to ':'Head '+wfDir(a,b)+' to '}${escapeHTML(cur.e.title)}</b></div><button type="button" class="nv-b" data-nv="next" aria-label="Next walk" ${sel>=L.length-1?'disabled':''}>›</button></div>`;
+  steps=`<div class="nv-steps"><div class="nv-steps-h"><b>Directions</b><small>to ${escapeHTML(cur.e.title)} · ${fmtD(cur.d)} · about ${cur.m} min</small></div><ol>${navSteps(cur).map(s=>`<li class="${s.arrive?'arrive':s.k}"><span class="nv-si" aria-hidden="true">${s.arrive?'⚑':s.k==='ring'?'◯':wfArrow(s.head)}</span><div><b>${s.t}</b><small>${s.arrive?s.sub:s.len}</small></div></li>`).join('')}</ol><p class="nv-note">Estimated on the concept layout: walkways and times are approximate, not live indoor navigation.</p></div>`}
+ el.innerHTML=`<div class="nv-stage"><svg class="pm-svg" viewBox="${vb.map(v=>v.toFixed(1)).join(' ')}" role="group" aria-label="Your route on the Expo map">${cwArt('pm-')}<g>${o}</g></svg>${bar}
+<div class="nv-tools" role="group" aria-label="Map zoom"><button type="button" data-nvz="out" aria-label="Zoom out">−</button><button type="button" data-nvz="in" aria-label="Zoom in">+</button><button type="button" data-nvz="fit" aria-label="Show the whole route" title="Whole route">⤢</button></div>
+<div class="pm-legend" aria-hidden="true"><span><i class="nv-k" style="--lc:${NAV_CROWD.Empty}"></i>Quiet</span><span><i class="nv-k" style="--lc:${NAV_CROWD.Moderate}"></i>Busy</span><span><i class="nv-k" style="--lc:${NAV_CROWD.Crowded}"></i>Crowded</span><span><i class="pm-k kgate"></i>Start gate</span></div></div>${steps}`};
+// wfArrow lives in the explore build; keep a local copy for the directions list.
+if(typeof wfArrow!=='function')window.wfArrow=deg=>`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" style="transform:rotate(${deg.toFixed(0)}deg)" aria-hidden="true"><path d="M12 20V5M6 11l6-6 6 6"/></svg>`;
+function navGo(i,mode){state.selected=Math.max(0,Math.min(state.plan.length-1,i));state.pmMode=mode||'leg';state.pmView=null;keepY(renderPlan)}
+document.addEventListener('click',e=>{const b=e.target.closest('[data-nv],[data-nvz],[data-nvleg]');if(!b)return;
+ if(b.dataset.nvleg){const i=state.plan.findIndex(x=>x.id===+b.dataset.nvleg);if(i>=0){navGo(i);$('plannerMap').scrollIntoView({block:'center',behavior:'smooth'})}return}
+ if(b.dataset.nvz){if(b.dataset.nvz==='fit'){state.pmView=null;state.pmMode='route'}else{const[x,y,w,h]=state._pmVB,f=b.dataset.nvz==='in'?.75:1/.75,nw=Math.min(1080,Math.max(250,w*f)),nh=nw/1.6,cx=x+w/2,cy=y+h/2;
+  state.pmView=[Math.max(0,Math.min(1080-nw,cx-nw/2)),Math.max(0,Math.min(720-nh,cy-nh/2)),nw,nh]}keepY(renderPlan);return}
+ const v=b.dataset.nv;if(v==='prev')navGo(state.selected-1);else if(v==='next')navGo(state.selected+1);
+ else if(v==='arrived'){const e=state.plan[state.selected];if(!e)return;const i=state.done.indexOf(e.id);if(i<0){state.done.push(e.id);if(state.selected<state.plan.length-1)state.selected++}else state.done.splice(i,1);state.pmMode='leg';state.pmView=null;sv();keepY(renderPlan)}});
+// Choosing a stop on the map or in the itinerary zooms to the walk into it.
+window.addEventListener('click',e=>{if(e.target.closest('[data-mapstop],.timeline-item[data-stop]')&&!e.target.closest('button.mini,[data-remove]')){state.pmMode='leg';state.pmView=null}},true);
+const _mpN=makePlan;makePlan=function(){state.pmMode='route';state.pmView=null;return _mpN.apply(this,arguments)};
+if(location.hash==='#planner')renderPlan();
+</script><script>
+/* ===== Ask ATHAR is the planning chat; the route, map, directions and details live on the Journey page ===== */
+/* move the plan detail out of Ask ATHAR into Journey */
+(function(){const main=document.querySelector('#askChat .planner-main'),page=$('page-journal');if(!main||!page)return;
+ const rv=document.createElement('div');rv.id='routeView';rv.className='container rv';
+ rv.innerHTML=`<div class="rv-head"><div class="rv-title"><div class="eyebrow">Your route</div><h2 id="rvTitle">Your plan</h2><div class="mt-sum" id="rvSum"></div></div><div class="rv-acts" id="rvActs"><button class="btn secondary small" data-goplan>✎ Change in Ask ATHAR</button></div></div><div class="chips rv-plans" id="rvPlans"></div><div id="rvBody"></div>
+<div id="rvEmpty" class="rv-empty" hidden><span aria-hidden="true">⌖</span><b>No plan yet</b><p>Tell ATHAR about your day. Your route, map and directions will appear here.</p><button class="btn" data-goplan>Plan with ATHAR</button></div>`;
+ page.insertBefore(rv,$('journalView'));
+ const body=$('rvBody');['liveNote','budget','adjust','dayTabs','plannerMap'].forEach(id=>{const n=$(id);if(n)body.appendChild(n)});
+ 
+ const live=$('liveChip');if(live)$('rvActs').prepend(live);
+ main.querySelectorAll('.savebar,.planner-main>p.muted').forEach(n=>n.remove());
+ const jt=document.createElement('div');jt.className='container rv-sep';jt.innerHTML='<div class="eyebrow">Saved journeys</div>';page.insertBefore(jt,$('journalView'));
+})();
+
+/* Journey: the plan's name, summary and plan switcher above the route */
+function renderRouteHead(){if(!$('routeView'))return;const n=state.days.flat().length;
+ $('rvTitle').textContent=plName();$('rvSum').innerHTML=$('planStats').innerHTML;
+ $('rvBody').hidden=!n;$('rvEmpty').hidden=!!n;$('rvSum').hidden=!n;
+ $('rvPlans').innerHTML=PLANS&&PLANS.list.length>1?PLANS.list.map(p=>`<button class="chip${p.id===PLANS.active?' selected':''}" data-plan="${p.id}">${escapeHTML(p.name)}</button>`).join(''):''}
+const _rpJ=renderPlan;renderPlan=function(){_rpJ();renderRouteHead()};
+// Switching plans from Journey stays on Journey.
+plOpen=function(p,msg){PLANS.active=p.id;plWrite();plApply(p.snap);showStage();if(state.stage==='chat'){const c=$('chatMessages');if(c)c.scrollTop=c.scrollHeight}
+ if(location.hash==='#journey')renderPlan();else if(location.hash!=='#planner')goTo('planner');if(msg)toast(msg)};
+// The chat stays short: the plan card follows this message.
+jvSummary=function(){const D=state.days,n=D.flat().length,hrs=Math.round(state.minutes/6)/10;
+ return`Here is my proposal: ${n} stop${n===1?'':'s'}${D.length>1?' over '+D.length+' days':''}, about ${hrs} hours${state.pace==='relaxed'?' at a relaxed pace':''}. Tell me what to change, or approve it and I will prepare your route.`};
+document.addEventListener('click',e=>{if(e.target.closest('[data-gojr]')){e.preventDefault();goTo('journey');scrollTo(0,0)}else if(e.target.closest('[data-goplan]')){e.preventDefault();askATHAR('')}});
+// "Change stop" in Journey continues the conversation in Ask ATHAR.
+window.addEventListener('click',e=>{if(e.target.closest('[data-x="chg"]')&&location.hash!=='#planner')setTimeout(()=>goTo('planner'),0)},true);
+window.addEventListener('hashchange',()=>{if(location.hash==='#journey')renderPlan()});
+// crowd levels keep updating while the route is open in Journey
+setInterval(()=>{if(location.hash==='#journey'&&!document.hidden&&state.plan.length)liveTick()},30000);
+renderPlan();
+</script><script>
+/* ===== Ask ATHAR works like an agent: it proposes a plan, revises it, and the route opens once the plan is approved ===== */
+const pcSig=(days,dates)=>JSON.stringify([days,dates||[]]);
+const curSig=()=>pcSig(state.days.map(l=>l.map(e=>e.id)),state.dates);
+const isApproved=()=>!!state.days.flat().length&&state.apSig===curSig();
+// remember the approval and the last version shown with each plan
+const _psA=plSnap;plSnap=function(){return Object.assign(_psA(),{apSig:state.apSig||'',cardSig:state.cardSig||'',cardIds:state.cardIds||[],prevIds:state.prevIds||[],pver:state.pver||0})};
+const _paA=plApply;plApply=function(s){_paA(s);s=s||{};state.apSig=s.apSig||'';state.cardSig=s.cardSig||'';state.cardIds=s.cardIds||[];state.prevIds=s.prevIds||[];state.pver=s.pver||0;state.nwReply=''};
+(function(){const s=PLANS&&plCur().snap||{};state.apSig=s.apSig||'';state.cardSig=s.cardSig||'';state.cardIds=s.cardIds||[];state.prevIds=s.prevIds||[];state.pver=s.pver||0})();
+const _pmA=plMeta;plMeta=function(p){const s=p.snap||{},m=_pmA(p);if(!(s.days||[]).flat().length)return m;return(s.apSig&&s.apSig===pcSig(s.days,s.dates)?'✓ Approved · ':'Draft · ')+m};
+
+/* the plan panel beside the chat */
+const pcCrowd=e=>e.traffic==='Crowded'?'<i class="pc-cr hi">Busy</i>':e.traffic==='Moderate'?'<i class="pc-cr md">Moderate</i>':'<i class="pc-cr lo">Quiet</i>';
+function pcDiffOf(prev,now){if(!prev.length)return'';
+ const add=now.filter(i=>!prev.includes(i)).map(EX).filter(Boolean),rem=prev.filter(i=>!now.includes(i)).map(EX).filter(Boolean),out=[];
+ add.forEach(e=>out.push(`<span class="pd-add">+ ${escapeHTML(e.title)}</span>`));rem.forEach(e=>out.push(`<span class="pd-rem">− ${escapeHTML(e.title)}</span>`));
+ if(!out.length)out.push('<span class="pd-mov">New order or times</span>');return out.join('')}
+function renderAskPlan(){const el=$('askPlan');if(!el)return;const n=state.days.flat().length;
+ if(!n){el.innerHTML=`<div class="as-empty"><span aria-hidden="true">✦</span><b>Your plan will appear here</b><p>Tell ATHAR how long you have, what you love and who is coming. ATHAR proposes a plan, you change it until it feels right, then approve it.</p></div>`;return}
+ const ok=isApproved(),v=state.pver||1,diff=v>1?pcDiffOf(state.prevIds||[],state.cardIds||[]):'';
+ el.innerHTML=`<div class="ap-ver">${v>1?'Version '+v:'First proposal'}</div>${diff?`<div class="pc-diff">${diff}</div>`:''}`
+  +state.days.map((l,d)=>{const it=sched(l,off(d)).it.filter(x=>x.k==='s');return`${state.days.length>1?`<div class="pc-day">Day ${d+1}${dateLbl(d)?' · '+dateLbl(d):''}</div>`:''}<ol class="pc-list">${it.map(x=>`<li><button type="button" data-x="dtl" data-id="${x.e.id}" title="See details"><span class="pc-t">${fmt(x.t)}</span><span class="pc-n" style="--rc:${(CW.regionById(x.e.region)||{}).color||'#174c42'}">${x.i+1}</span><span class="pc-x"><b>${escapeHTML(x.e.title)}</b><small>${escapeHTML(x.e.country)} · ${escapeHTML(x.e.type)}${x.cf?' · <em>time conflict</em>':''}</small></span>${pcCrowd(x.e)}</button></li>`).join('')||'<li class="pc-none">Open for exploring</li>'}</ol>`}).join('')
+  +(ok?`<div class="pc-done"><span>✓ Approved. Your route is ready.</span><button class="btn small" data-gojr>Open my route →</button></div>`
+     :`<div class="pc-acts"><button class="btn" data-apv>✓ Approve this plan</button><span class="pc-hint">Not quite right? Tell ATHAR what to change.</span></div><div class="pc-sugs"><button class="chip" data-sug="Swap the second stop">Swap a stop</button><button class="chip" data-sug="Add a coffee stop">Add a coffee stop</button><button class="chip" data-sug="Spread it over two days">Over two days</button></div>`)}
+// each new version gets one short line in the chat
+let pcT;function pcSync(){clearTimeout(pcT);pcT=setTimeout(()=>{const c=$('chatMessages');
+ if(c&&state.stage==='chat'&&state.days.flat().length){const sig=curSig();if(sig!==state.cardSig){const now=state.days.flat().map(e=>e.id);
+  state.prevIds=state.cardIds||[];state.cardIds=now;state.cardSig=sig;state.pver=(state.pver||0)+1;const n=now.length;
+  const el=document.createElement('div');el.className='bubble agent pnote';el.innerHTML=`<b>${state.pver>1?'Plan updated · version '+state.pver:'Plan proposed'}</b><span>${n} stop${n===1?'':'s'}${state.days.length>1?' · '+state.days.length+' days':''}</span>${state.pver>1?`<div class="pc-diff">${pcDiffOf(state.prevIds,now)}</div>`:''}`;
+  c.appendChild(el);c.scrollTop=c.scrollHeight;plSaveSoon()}}
+ renderAskPlan();askHead()},0)}
+const _arA=addRich;addRich=function(t,a){_arA(t,a);pcSync()};
+const _amA=addMessage;addMessage=function(w,m){_amA(w,m);if(w!=='user')pcSync()};
+const _rpA=renderPlan;renderPlan=function(){const sig=curSig();
+ // a change made while following an approved route (or asked for on the route) stays approved
+ if(location.hash==='#journey'&&state.apSig&&state.apSig===state.lastSig)state.apSig=sig;
+ state.lastSig=sig;_rpA();pcSync();renderNow()};
+const _spA=startPlan;startPlan=function(){state.pver=0;state.cardSig='';state.cardIds=[];state.prevIds=[];_spA()};
+
+/* approval */
+function firstOpen(){const i=state.plan.findIndex(e=>!state.done.includes(e.id));return i<0?0:i}
+function approvePlan(){if(!state.days.flat().length)return toast('Ask ATHAR for a plan first');state.apSig=curSig();plSaveNow();
+ _arA('Approved. I have prepared your walking route. On the route page I will tell you when to leave and the way to each stop, and you can ask me for help while you walk.',[{t:'Open my route →',a:'data-gojr'}]);
+ state.day=0;sync();state.selected=firstOpen();state.pmMode='leg';state.pmView=null;state.nwReply='';
+ saveJourney();renderPlan();scrollTo(0,0);toast('Plan approved. Your route is ready.')}
+document.addEventListener('click',e=>{if(e.target.closest('[data-apv]')){e.preventDefault();approvePlan()}});
+
+/* plan panel: status next to the title; approving replaces "Save to Journey" */
+(function(){const main=document.querySelector('#askChat .planner-main');if(!main)return;
+ const st=document.createElement('span');st.id='askStatus';st.className='ask-st';const t=main.querySelector('.mt-title');if(t)t.after(st);
+ const p=document.createElement('div');p.id='askPlan';main.appendChild(p)})();
+function askHead(){const st=$('askStatus');if(!st)return;const n=state.days.flat().length;st.hidden=!n;st.className='ask-st'+(isApproved()?' ok':'');st.textContent=isApproved()?'✓ Approved':'Draft · waiting for your approval'}
+
+/* Journey: the route opens only for an approved plan */
+(function(){const rv=$('routeView');if(!rv)return;const w=document.createElement('div');w.id='rvWait';w.className='rv-empty rv-wait';w.hidden=true;
+ w.innerHTML=`<span aria-hidden="true">✎</span><b>Your plan is waiting for approval</b><p>Approve the plan and ATHAR will prepare your walking route, map and directions.</p><div class="row" style="justify-content:center"><button class="btn" data-apv>✓ Approve and start</button><button class="btn secondary" data-goplan>Review in Ask ATHAR</button></div>`;
+ rv.insertBefore(w,$('rvEmpty'));
+ const now=document.createElement('div');now.id='rvNow';$('rvBody').prepend(now)})();
+const _rhA=renderRouteHead;renderRouteHead=function(){_rhA();if(!$('rvWait'))return;const n=state.days.flat().length,ok=isApproved();
+ $('rvWait').hidden=!n||ok;$('rvBody').hidden=!n||!ok;const t=document.querySelector('#routeView .rv-title .eyebrow');if(t)t.textContent=n&&!ok?'Draft plan':'Your route'};
+
+/* ===== On the route: what a visitor needs right now ===== */
+function renderNow(){const el=$('rvNow');if(!el)return;const L=state.plan;if(!L.length){el.innerHTML='';return}
+ const r=sched(L,off(state.day)),i=L.findIndex(e=>!state.done.includes(e.id)),doneN=L.filter(e=>state.done.includes(e.id)).length;
+ const dots=`<div class="nw-prog" aria-label="${doneN} of ${L.length} stops visited">${L.map((e,k)=>`<button type="button" class="nw-dot${state.done.includes(e.id)?' dn':''}${k===i?' cur':''}" data-nvleg="${e.id}" title="${escapeHTML(e.title)}">${state.done.includes(e.id)?'✓':k+1}</button>`).join('<i></i>')}</div>`;
+ if(i<0){el.innerHTML=`<div class="nw nw-end"><div class="nw-main"><small>${state.days.length>1?'Day '+(state.day+1)+' complete':'All done'}</small><h3>You have visited every stop</h3><p class="nw-sub">Your visits are saved below in your Journey. Add photos and notes while they are fresh.</p></div>${dots}</div>`;return}
+ const e=L[i],leg=r.it.find(x=>x.k==='w'&&x.e===e),st=r.it.find(x=>x.k==='s'&&x.e===e),fixed=state.fixed.includes(e.id)&&tmin(e)!=null,from=leg?leg.from:null;
+ const fromN=from?(from.n||from.title):'',late=st&&st.cf?st.cf.late:0,next=L[i+1];
+ el.innerHTML=`<div class="nw"><div class="nw-main"><small>Next stop · ${i+1} of ${L.length}${doneN?' · '+doneN+' visited':''}</small>
+<h3>${escapeHTML(e.title)}</h3><p class="nw-sub">${escapeHTML(e.country)} · ${escapeHTML(e.type)}${fromN?' · from '+escapeHTML(fromN.split(' –')[0]):''}</p>
+<div class="nw-facts">${leg?`<div><span>Leave by</span><b>${fmt(leg.t)}</b></div><div><span>Walk</span><b>${leg.m} min</b><em>${fmtD(leg.d)}</em></div>`:''}<div><span>${fixed?'Event starts':'You arrive'}</span><b>${fmt(fixed?tmin(e):st.t)}</b></div><div><span>Crowd now</span><b class="cr-${(e.traffic||'Empty').toLowerCase()}">${e.traffic==='Crowded'?'Busy':e.traffic==='Moderate'?'Moderate':'Quiet'}</b>${e.wait?`<em>~${e.wait} min queue</em>`:''}</div></div>
+${late?`<p class="nw-warn">At this pace you reach it about ${late} min after it starts. Ask ATHAR to adjust.</p>`:''}
+<div class="nw-acts"><button class="btn" data-nwgo="${i}">Show me the way</button><button class="btn secondary" data-nwarr="${e.id}">I’ve arrived</button>${next?`<span class="nw-then">Then: ${escapeHTML(next.title)}</span>`:''}</div></div>
+<div class="nw-help"><b>Need help on the way? Ask ATHAR</b><div class="nw-chips"><button class="chip" data-nwask="late">Running late</button><button class="chip" data-nwask="skip">Skip this stop</button><button class="chip" data-nwask="break">Need a break</button><button class="chip" data-nwask="crowd">Too crowded</button><button class="chip" data-nwask="type">Ask something…</button></div>
+<form class="nw-ask" id="nwForm" hidden><input id="nwInput" placeholder="For example: where can I eat near here?" aria-label="Ask ATHAR"/><button class="btn small" type="submit">Ask</button></form><div id="nwReply" class="nw-reply" hidden></div></div>${dots}</div>`;
+ if(state.nwReply){const b=$('nwReply');b.hidden=false;b.innerHTML=state.nwReply}}
+// ask the planner from the route; its answer shows here, and plan changes update the route
+function nwAsk(msg){const c=$('chatMessages');state.nwFrom=c?c.children.length:0;state.nwReply='<div class="nw-think">ATHAR is thinking…</div>';renderNow();generateFromText(msg);nwWatch()}
+function nwWatch(){let n=0;const t=setInterval(()=>{const c=$('chatMessages');n++;if(!c)return clearInterval(t);
+ const fresh=[...c.children].slice(state.nwFrom).filter(b=>b.classList.contains('agent')&&!b.classList.contains('think'));
+ const thinking=!!c.querySelector('.think');if((!thinking&&fresh.length)||n>130){clearInterval(t);
+  state.nwReply=fresh.length?fresh.map(b=>`<div class="nw-msg${b.classList.contains('pnote')?' note':''}">${b.innerHTML}</div>`).join(''):'<div class="nw-msg">ATHAR could not answer just now. Try again in a moment.</div>';
+  if(location.hash==='#journey')renderPlan();else renderNow()}},400)}
+document.addEventListener('click',e=>{const g=e.target.closest('[data-nwgo]'),a=e.target.closest('[data-nwarr]'),q=e.target.closest('[data-nwask]');
+ if(g){navGo(+g.dataset.nwgo);const m=$('plannerMap');if(m)m.scrollIntoView({block:'start',behavior:'smooth'})}
+ else if(a){const id=+a.dataset.nwarr;if(!state.done.includes(id))state.done.push(id);state.nwReply='';state.selected=firstOpen();state.pmMode='leg';state.pmView=null;sv();keepY(renderPlan);toast('Checked in at '+EX(id).title)}
+ else if(q){const e2=state.plan[firstOpen()],k=q.dataset.nwask;if(k==='type'){const f=$('nwForm');f.hidden=false;$('nwInput').focus();return}
+  if(!e2)return;nwAsk({late:'I am running 30 min late',skip:'Remove '+e2.title,break:'Add a coffee stop',crowd:'Change '+e2.title}[k])}});
+document.addEventListener('submit',e=>{if(e.target.id==='nwForm'){e.preventDefault();const v=$('nwInput').value.trim();if(v)nwAsk(v)}});
+renderPlan();askHead();{const c=$("chatMessages");if(c)setTimeout(()=>{c.scrollTop=c.scrollHeight},50)}
+</script>
+<style id="athar-journey-qa">
+/* Journey shows each stop once: the next-stop card and progress dots. The full schedule stays in Ask ATHAR. */
+#askChat .itinerary-head,#askChat #timeline,#askChat #visitedBox{display:none}
+/* Visits are recorded with "I’ve arrived" on the route, so saved journeys have no separate check list. */
+#journalView .jplan .jstop,#journalView .jplan .jday{display:none}
+.jv-hint{font-size:13px;color:var(--muted);margin:0}
+@media(max-width:560px){.nw-then{flex-basis:100%;margin:2px 0 0}}
+</style>
+<script id="athar-journey-qa-logic">
+/* ===== Journey QA: one saved journey per plan, and "I’ve arrived" is the only check-in ===== */
+(function(){
+const planId=()=>PLANS?PLANS.active:null;
+// the saved journey that belongs to the open plan (older entries are matched by their stops)
+function jvFor(a){const pid=planId(),sig=JSON.stringify(state.days.map(l=>l.map(e=>e.id)));return a.find(j=>pid!=null&&j.planId===pid)||a.find(j=>j.planId==null&&JSON.stringify(j.days)===sig)}
+// create or update it; a revised and re-approved plan replaces its journey instead of adding a copy
+function jvSync(){const n=state.days.flat().length;if(!n)return null;const a=jvLoad(),times={};
+ state.days.forEach((l,i)=>sched(l,off(i)).it.forEach(x=>{if(x.k==='s')times[x.e.id]=fmt(x.t)}));
+ const days=state.days.map(l=>l.map(e=>e.id)),ids=days.flat(),auto=state.interests.length?state.interests.slice(0,2).join(' & ')+' trail':'My Expo journey';
+ let J=jvFor(a);
+ if(J){J.visited.forEach(id=>{if(J.times&&J.times[id])times[id]=J.times[id]});Object.assign(J,{planId:planId(),days,times,minutes:state.minutes,ndays:days.length,visited:[...new Set([...J.visited.filter(id=>ids.includes(id)),...state.done.filter(id=>ids.includes(id))])]})}
+ else{J={id:Date.now(),planId:planId(),name:/^Plan \d+$/.test(plName())?auto:plName(),date:new Date().toLocaleDateString(),days,times,visited:state.done.filter(id=>ids.includes(id)),minutes:state.minutes,ndays:days.length};a.unshift(J)}
+ jvStore(a);state.jid=J.id;return J}
+window.jvSync=jvSync;window.jvFor=jvFor;
+saveJourney=function(){if(!jvSync())return toast('Create a plan first');goTo('journey')};
+// approving saves (or updates) the journey without leaving the chat
+const _apQ=approvePlan;approvePlan=function(){const go=goTo;goTo=()=>{};try{_apQ()}finally{goTo=go}};
+// checking in on the route marks the stop visited in the saved journey
+function jvArrive(id){const a=jvLoad();let J=jvFor(a);if(!J){jvSync();return jvArrive(id)}
+ if(!J.visited.includes(id)){J.visited.push(id);if(window.tripNow&&tripNow()!=null)(J.times=J.times||{})[id]=fmt(Math.round(tripNow()));jvStore(a)}state.jid=J.id;if(location.hash==='#journey')keepY(renderJournal)}
+document.addEventListener('click',e=>{const a=e.target.closest('[data-nwarr]');if(a)jvArrive(+a.dataset.nwarr)});
+// Journey opens on the open plan's saved journey
+window.addEventListener('hashchange',()=>{if(location.hash==='#journey'&&isApproved()){const J=jvFor(jvLoad());if(J&&state.jid!==J.id){state.jid=J.id;renderJournal()}}});
+// the saved journey keeps its name, progress and trace; the stop list lives on the route above
+const _rjQ=renderJournal;renderJournal=function(){_rjQ();const el=$('journalView');if(!el)return;
+ const p=el.querySelector('.jplan');if(p&&!p.querySelector('.jv-hint'))p.insertAdjacentHTML('beforeend','<p class="jv-hint">Tap “I’ve arrived” at each stop on your route and it is recorded here.</p>');
+ const s=el.querySelector('.jboard .jsum');if(s&&/Mark a stop/.test(s.textContent))s.textContent='Nothing visited yet. Tap “I’ve arrived” at a stop on your route and your trace appears here.'};
+if(location.hash==='#journey')renderJournal();
+})();
+</script>
+<style id="athar-route-agent">
+/* Journey: the route uses the same width and side padding as the journal below it */
+#routeView.container,#page-journal .rv-sep.container{width:min(1060px,calc(100% - 40px))}
+.nv-steps{padding:20px 24px 18px}
+/* the map moves like a web map: drag to pan, Ctrl/⌘ + scroll or pinch to zoom */
+#plannerMap .pm-svg{cursor:grab;touch-action:pan-y;user-select:none;-webkit-user-select:none}
+#plannerMap .pm-svg.grab{cursor:grabbing}
+#plannerMap .pm-stop{cursor:pointer}
+.nv-hint{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);padding:10px 16px;border-radius:12px;background:#1b2929e6;color:#fff;font-size:13px;font-weight:700;pointer-events:none;opacity:0;transition:opacity .2s}
+.nv-hint.on{opacity:1}
+.nv-tools .nv-me{font-size:15px}
+/* ATHAR on the route */
+.ag-h small{display:block;font-size:12px;color:var(--muted);margin-top:2px}
+.nw-chips .chip.selected{background:var(--green);color:#fff;border-color:var(--green)}
+.ag-body{margin-top:12px}
+.ag-idle{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0}
+.ag-card{background:#fff;border:1px solid #e1e6dd;border-radius:14px;padding:12px 14px;font-size:13px;line-height:1.5}
+.ag-card+.ag-card{margin-top:8px}
+.ag-card p{margin:0}
+.ag-card .ag-why{font-size:12px;color:var(--muted);margin-top:4px}
+.ag-card ul{margin:6px 0 0;padding-left:18px;font-size:12.5px}
+.ag-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.ag-acts .btn{padding:8px 14px;font-size:12.5px}
+.ag-done{display:flex;align-items:center;justify-content:space-between;gap:8px;background:#e3f1e6;color:#2d6a52;border-radius:12px;padding:10px 12px;font-size:13px;font-weight:700}
+.ag-done .mini{border:1px solid #c7e2cf;background:#fff;border-radius:100px;padding:5px 11px;font:inherit;font-size:12px;font-weight:700;color:var(--green);cursor:pointer}
+.nw-facts em.fc{font-size:10.5px;letter-spacing:.02em}
+.nw-src{grid-column:1/-1;border-top:1px solid #e1e6dd;padding:10px 24px 12px;font-size:12.5px;color:var(--muted)}
+.nw-src summary{cursor:pointer;font-weight:700;color:#53655d}
+.nw-src ul{margin:8px 0 2px;padding-left:18px;line-height:1.55}
+.nw-src b{color:#1b2929}
+@media(max-width:560px){.nw-src{padding:10px 16px 12px}}
+</style>
+<script id="athar-route-agent-logic">
+/* ===== Route: realistic crowd forecast, a map you can move, and ATHAR as a helper on the way ===== */
+(function(){
+/* ---------- 1. Crowd forecast ----------
+   The dataset gives each place one usual crowd level. ATHAR turns it into a forecast for the time you
+   arrive: busier at lunch and dinner, around an event's start and on Friday/Saturday evenings, quieter
+   in off-peak hours. It is a forecast on sample data, not a live sensor feed. */
+const LVL=['Empty','Moderate','Crowded'],touched=new Set();
+function crowdAt(e,t,d){const base=e.baseT!=null?e.baseT:e.traffic,b=Math.max(0,LVL.indexOf(base)),h=t/60;let adj=0;
+ if(e.ev){const T=tmin(e);if(T!=null){if(t>=T-20&&t<=T+10)adj=1;else if(t>T+30)adj=-1}}
+ else if((h>=12.25&&h<14.25)||(h>=18.5&&h<20.5))adj=1;else if(h<11.5||(h>=15&&h<17.5))adj=-1;
+ const iso=(state.dates||[])[d]||planDate(d),wd=new Date(iso+'T00:00').getDay();if((wd===5||wd===6)&&h>=16)adj+=1;
+ const n=Math.max(0,Math.min(2,b+adj)),k=(e.id*31+Math.floor(t/30)*7)%9;
+ return{level:LVL[n],wait:n===0?0:n===1?4+k%5:12+k}}
+window.crowdAt=crowdAt;window.applyForecast=()=>applyForecast();
+function applyForecast(){const inPlan=new Set(state.days.flat().map(e=>e.id));
+ touched.forEach(id=>{if(inPlan.has(id))return;const e=EX(id);if(e&&e.baseT!=null){e.traffic=e.baseT;e.wait=e.baseW}touched.delete(id)});
+ // two passes: the queue changes the arrival time at later stops, which changes their forecast
+ for(let p=0;p<2;p++)state.days.forEach((l,d)=>sched(l,off(d)).it.forEach(x=>{if(x.k!=='s')return;const e=x.e;
+  if(e.baseT==null){e.baseT=e.traffic;e.baseW=e.wait}const f=crowdAt(e,x.t,d);e.traffic=f.level;e.wait=f.wait;touched.add(e.id)}))}
+const _rpF=renderPlan;renderPlan=function(){try{applyForecast()}catch(err){console.warn('ATHAR: forecast skipped',err)}return _rpF.apply(this,arguments)};
+// no random "live" changes: the forecast only changes when your plan or your progress changes
+liveTick=function(){};
+liveStamp=function(){const el=$('liveText'),c=$('liveChip');if(!el||!c)return;const lb=dateLbl(state.day);
+ el.textContent='Crowd from check-ins'+(lb?' · '+lb:'');c.title='Crowd and queue come from visitors tapping “I’ve arrived” at each place. Simulated in this prototype.'};
+{const n=$('liveNote');if(n)n.hidden=true}
+
+/* ---------- 2. The route map moves like a web map ---------- */
+const MW=1080,MH=720,MINW=170;
+const fitVB=(x,y,w)=>{w=Math.min(MW,Math.max(MINW,w));const h=w/1.6;return[Math.max(0,Math.min(MW-w,x)),Math.max(0,Math.min(MH-h,y)),w,h]};
+const mapSvg=()=>document.querySelector('#plannerMap .pm-svg');
+function setVB(vb){state.pmView=vb;state._pmVB=vb;const s=mapSvg();if(s)s.setAttribute('viewBox',vb.map(v=>v.toFixed(1)).join(' '))}
+let redrawT;const redraw=()=>{clearTimeout(redrawT);redrawT=setTimeout(()=>{const y=scrollY;renderMap('plannerMap',state.plan);scrollTo(0,y)},160)};
+function zoomAt(f,cx,cy){const s=mapSvg();if(!s||!state._pmVB)return;const r=s.getBoundingClientRect(),[x,y,w,h]=state._pmVB,
+ px=x+(cx-r.left)/r.width*w,py=y+(cy-r.top)/r.height*h,nw=Math.min(MW,Math.max(MINW,w*f)),k=nw/w;setVB(fitVB(px-(px-x)*k,py-(py-y)*k,nw));redraw()}
+const ptr=new Map();let drag=null,pinch=null,justDragged=false;
+document.addEventListener('pointerdown',e=>{const s=e.target.closest('#plannerMap .pm-svg');if(!s||(e.pointerType==='mouse'&&e.button!==0))return;
+ ptr.set(e.pointerId,[e.clientX,e.clientY]);
+ if(ptr.size===1)drag={x:e.clientX,y:e.clientY,vb:state._pmVB.slice(),moved:false};
+ else if(ptr.size===2){const[a,b]=[...ptr.values()];pinch={d:Math.hypot(a[0]-b[0],a[1]-b[1]),vb:state._pmVB.slice()};drag=null}});
+window.addEventListener('pointermove',e=>{if(!ptr.has(e.pointerId))return;ptr.set(e.pointerId,[e.clientX,e.clientY]);const s=mapSvg();if(!s)return;
+ if(pinch&&ptr.size===2){const[a,b]=[...ptr.values()],d=Math.hypot(a[0]-b[0],a[1]-b[1]);if(!d)return;state._pmVB=pinch.vb.slice();setVB(pinch.vb);zoomAt(pinch.d/d,(a[0]+b[0])/2,(a[1]+b[1])/2);return}
+ if(!drag)return;const dx=e.clientX-drag.x,dy=e.clientY-drag.y;if(!drag.moved&&Math.hypot(dx,dy)<5)return;
+ if(!drag.moved){drag.moved=true;s.classList.add('grab');try{s.setPointerCapture(e.pointerId)}catch(_){}}
+ const r=s.getBoundingClientRect(),[x,y,w]=drag.vb;setVB(fitVB(x-dx/r.width*w,y-dy/r.height*(w/1.6),w))});
+const endPtr=e=>{if(!ptr.has(e.pointerId))return;ptr.delete(e.pointerId);if(ptr.size<2)pinch=null;
+ if(drag&&drag.moved){justDragged=true;setTimeout(()=>{justDragged=false},0)}if(!ptr.size){drag=null;const s=mapSvg();if(s)s.classList.remove('grab')}};
+window.addEventListener('pointerup',endPtr);window.addEventListener('pointercancel',endPtr);
+// a drag is not a click on a stop
+window.addEventListener('click',e=>{if(justDragged&&e.target.closest('#plannerMap')){e.stopPropagation();e.preventDefault();justDragged=false}},true);
+// like an embedded web map: plain scrolling scrolls the page, Ctrl/⌘ + scroll (or a trackpad pinch) zooms
+let hintT;document.addEventListener('wheel',e=>{const s=e.target.closest&&e.target.closest('#plannerMap .pm-svg');if(!s)return;
+ if(e.ctrlKey||e.metaKey){e.preventDefault();zoomAt(Math.exp(e.deltaY*.0022),e.clientX,e.clientY);return}
+ const h=document.querySelector('#plannerMap .nv-hint');if(h){h.classList.add('on');clearTimeout(hintT);hintT=setTimeout(()=>h.classList.remove('on'),1300)}},{passive:false});
+document.addEventListener('dblclick',e=>{if(e.target.closest('#plannerMap .pm-svg')&&!e.target.closest('.pm-stop')){e.preventDefault();zoomAt(e.shiftKey?1/.6:.6,e.clientX,e.clientY)}});
+// extra controls: back to my walk, and the gesture hint
+const _rmF=renderMap;renderMap=function(id){const r=_rmF.apply(this,arguments);if(id!=='plannerMap')return r;const st=document.querySelector('#plannerMap .nv-stage');if(!st)return r;
+ const t=st.querySelector('.nv-tools');if(t&&!t.querySelector('.nv-me'))t.insertAdjacentHTML('afterbegin','<button type="button" class="nv-me" data-nvme aria-label="Back to my walk" title="Back to my walk"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6.5"/><circle cx="12" cy="12" r="2" fill="currentColor"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/></svg></button>');
+ const mac=/Mac|iPhone|iPad/.test(navigator.platform);st.insertAdjacentHTML('beforeend',`<div class="nv-hint" aria-hidden="true">Use ${mac?'⌘':'Ctrl'} + scroll to zoom the map</div>`);
+ const s=st.querySelector('.pm-svg');if(s)s.setAttribute('aria-label','Your route on the Expo map. Drag to move, Ctrl or ⌘ plus scroll to zoom.');return r};
+document.addEventListener('click',e=>{if(!e.target.closest('[data-nvme]'))return;state.selected=firstOpen();state.pmMode='leg';state.pmView=null;keepY(renderPlan)});
+
+/* ---------- 3. ATHAR on the route: works out what a change means, then asks before changing the plan ---------- */
+const SEL=new Set();const esc=escapeHTML;
+const crowdWord=l=>l==='Crowded'?'busy':l==='Moderate'?'moderately busy':'quiet';
+const walkMin=(a,b)=>Math.max(1,Math.round(navLeg(a,b).m/80*state.busy));
+const openAt=(x,t)=>!x.ev&&x.open<=fmt(t)&&fmt(t)<x.close;
+function ctx(){const L=state.plan,d=state.day;if(!L.length)return null;const r=sched(L,off(d)),i=L.findIndex(e=>!state.done.includes(e.id));if(i<0)return null;
+ const e=L[i],leg=r.it.find(x=>x.k==='w'&&x.e===e),st=r.it.find(x=>x.k==='s'&&x.e===e),from=leg?leg.from:gateFor(e);
+ return{L,d,r,i,e,leg,st,from,fromN:(from.n||from.title||'your start').split(' –')[0],now:window.tripNow&&tripNow()!=null?Math.round(tripNow()):(leg?leg.t:st.t),next:L[i+1]}}
+const dayEnd=(list,o)=>{const r=sched(list,o);return{end:r.end,over:Math.max(0,Math.round(r.used-r.av)),cf:r.it.filter(x=>x.cf&&!state.done.includes(x.e.id))}};
+const endTxt=x=>x.over>5?`Your day would end at ${fmt(x.end)}, ${x.over} min over the time you have`:`Your day would end at ${fmt(x.end)}, within the time you have`;
+const near=(from,pred,n)=>experiences.filter(x=>whereX(x.id)<0&&!state.done.includes(x.id)&&pred(x)).map(x=>[dm(from,x),x]).sort((a,b)=>a[0]-b[0]).slice(0,n).map(p=>p[1]);
+function plan(k,arg){const c=ctx();if(!c)return{cards:[]};const{L,d,i,e,st,from,fromN,now,next}=c,o=off(d),ops=[],add=op=>(ops.push(op),ops.length-1),cards=[];
+ const btn=(op,t,sec)=>`<button class="btn${sec?' secondary':''} small" data-nwdo="${add(op)}">${t}</button>`;
+ if(k==='late'){
+  if(!arg&&window.tripBehind&&tripBehind()>=5)arg=Math.ceil(tripBehind()/5)*5;
+  if(!arg)return{ask:`How late are you? I will check what it does to the rest of your day before changing anything.`,opts:[10,20,30,45].map(m=>`<button class="chip" data-nwlate="${m}">${m} min</button>`).join('')};
+  const r2=sched(L,o+arg),s2=r2.it.find(x=>x.k==='s'&&x.e===e),de=dayEnd(L,o+arg),fd=fitDrop(L,o+arg),drop=fd.drop.filter(id=>!state.done.includes(id));
+  const cf=de.cf.map(x=>`<li>${esc(x.e.title)} starts at ${fmt(tmin(x.e))}; you would arrive at ${fmt(x.t)}, ${x.cf.late} min after it starts</li>`).join('');
+  cards.push(`<div class="ag-card"><p>${window.tripBehind&&tripBehind()>=5?`You are about ${arg} min behind. Moved ${arg} min later`:`If you are ${arg} min late`}, you reach <b>${esc(e.title)}</b> at ${fmt(s2.t)} instead of ${fmt(st.t)}. ${endTxt(de)}.</p>${cf?`<ul>${cf}</ul>`:''}
+<div class="ag-acts">${btn({t:'late',day:d,min:arg,drop:[],msg:`Plan moved ${arg} min later`},`Move my plan ${arg} min later`)}${de.over>5&&drop.length?btn({t:'late',day:d,min:arg,drop,msg:`Plan moved ${arg} min later; dropped ${drop.map(id=>EX(id).title).join(', ')}`},`Move it and drop ${esc(drop.map(id=>EX(id).title).join(', '))}`,1):''}</div>
+<p class="ag-why">Optional stops go first when time runs short; events you picked stay.</p></div>`)}
+ if(k==='break'){
+  const cof=/coffee|tea|caf|dessert|bakery|juice|sweet/i,list=near(from,x=>!x.ev&&openAt(x,now+5),25).map(x=>{const w=walkMin(from,x),f=crowdAt(x,now+w,d);return{x,w,f,s:w+(f.level==='Crowded'?12:f.level==='Moderate'?5:0)-(cof.test(x.type)?6:0)}}).sort((a,b)=>a.s-b.s).slice(0,2);
+  if(!list.length)cards.push(`<div class="ag-card"><p>I could not find a food or coffee place open near ${esc(fromN)} at ${fmt(now)}.</p></div>`);
+  list.forEach(({x,w,f})=>{const nl=L.slice();nl.splice(i,0,x);const de=dayEnd(nl,o);
+   cards.push(`<div class="ag-card"><p><b>${esc(x.title)}</b> · ${esc(x.type)}, ${esc(x.country)}</p><ul><li>${w} min walk from ${esc(fromN)}</li><li>Expected to be ${crowdWord(f.level)} when you get there${f.wait?' (about '+f.wait+' min queue)':''}</li><li>Open until ${x.close}; about ${x.duration} min for a stop</li></ul><p class="ag-why">${endTxt(de)}.</p>
+<div class="ag-acts">${btn({t:'add',day:d,id:x.id,before:e.id,drop:[],msg:`Added ${x.title} before ${e.title}`},`Stop here before ${esc(e.title)}`)}</div></div>`)})}
+ if(k==='crowd'){const f0=crowdAt(e,st.t,d),f=f0.level==='Empty'?{level:'Moderate',wait:f0.wait}:f0,seen=f0.level!==f.level;
+  if(e.ev&&tmin(e)!=null){cards.push(`<div class="ag-card"><p><b>${esc(e.title)}</b> is an event at ${fmt(tmin(e))}. Most people arrive in the 20 minutes before it starts, so expect ${crowdWord(f.level)} doors${f.wait?' and about '+f.wait+' min in the queue':''}.</p><p class="ag-why">Arriving 10 minutes early is usually enough. If you would rather skip it, I can show you what your day looks like without it.</p><div class="ag-acts"><button class="btn secondary small" data-nwask="skip">Show my day without it</button></div></div>`)}
+  else{
+   if(next&&!state.fixed.includes(next.id)){const sw=L.slice();sw[i]=next;sw[i+1]=e;const r2=sched(sw,o),t2=r2.it.find(x=>x.k==='s'&&x.e===e).t,f2=crowdAt(e,t2,d);
+    if(LVL.indexOf(f2.level)<LVL.indexOf(f.level))cards.push(`<div class="ag-card"><p>Go to <b>${esc(next.title)}</b> first. By ${fmt(t2)}, ${esc(e.title)} should be ${crowdWord(f2.level)} instead of ${crowdWord(f.level)}.</p><p class="ag-why">${endTxt(dayEnd(sw,o))}.</p><div class="ag-acts">${btn({t:'fix',day:d,order:sw.map(x=>x.id),msg:`Visiting ${next.title} first`},`Swap these two stops`)}</div></div>`)}
+   near(e,x=>x.ev===e.ev&&(x.category===e.category||x.type===e.type)&&openAt(x,st.t),20).map(x=>{const w=walkMin(from,x),g=crowdAt(x,now+w,d);return{x,w,g}}).filter(a=>LVL.indexOf(a.g.level)<LVL.indexOf(f.level)).sort((a,b)=>a.w-b.w).slice(0,2).forEach(({x,w,g})=>{const nl=L.slice();nl[i]=x;
+    cards.push(`<div class="ag-card"><p>Try <b>${esc(x.title)}</b> instead: ${esc(x.type)}, ${esc(x.country)}.</p><ul><li>${w} min walk from ${esc(fromN)}</li><li>Expected to be ${crowdWord(g.level)}${g.wait?' (about '+g.wait+' min queue)':''}, compared with ${crowdWord(f.level)} at ${esc(e.title)}</li></ul><p class="ag-why">${endTxt(dayEnd(nl,o))}.</p><div class="ag-acts">${btn({t:'rep',day:d,old:e.id,id:x.id,msg:`Replaced ${e.title} with ${x.title}`},`Go here instead`)}</div></div>`)});
+   if(!cards.length)cards.push(`<div class="ag-card"><p>I could not find a quieter place like ${esc(e.title)} nearby, or a later slot that is calmer. The queue usually moves faster than it looks; if you would rather not wait, I can show your day without it.</p><div class="ag-acts"><button class="btn secondary small" data-nwask="skip">Show my day without it</button></div></div>`);
+   if(seen)cards.unshift(`<div class="ag-card"><p>The forecast said ${esc(e.title)} would be quiet at ${fmt(st.t)}, so thanks for telling me. Here is what I can do:</p></div>`)}}
+ if(k==='skip'){const nl=L.filter(x=>x!==e),de=dayEnd(nl,o);
+  cards.push(`<div class="ag-card"><p>Skip <b>${esc(e.title)}</b>? ${next?`You walk straight from ${esc(fromN)} to ${esc(next.title)} (${walkMin(from,next)} min).`:'It is your last stop.'} ${endTxt(de)}.</p><div class="ag-acts">${btn({t:'rm',day:d,id:e.id,msg:`Skipped ${e.title}`},'Skip it')}</div></div>`)}
+ return{cards,ops}}
+function helpBody(){const h=state.nwHelp;if(!h)return(window.agentNudge&&agentNudge())||'<p class="ag-idle">Tell me if something changes. I work out what it means for the rest of your day and ask before changing your plan.</p>';
+ if(h.k==='done')return`<div class="ag-done"><span>✓ ${esc(h.msg)}</span><button class="mini" data-x="undo" data-nwundo>Undo</button></div>`+(window.agentNudge?`<div style="margin-top:8px">${agentNudge()}</div>`:'');
+ if(h.k==='type')return'';if(h.k==='arrived')return window.arrivedCard?arrivedCard(h):'';
+ const p=plan(h.k,h.arg);state.nwOps=p.ops||[];
+ return p.ask?`<div class="ag-card"><p>${p.ask}</p><div class="ag-acts">${p.opts}</div></div>`:p.cards.join('')}
+function srcNote(){return`<details class="nw-src"><summary>Where these numbers come from</summary><ul>
+<li><b>Times and opening hours</b> come from the prototype dataset: 1,000 events and 1,000 food places (sample data, not official Expo information).</li>
+<li><b>Walks</b> are measured along the walkways on the concept venue map, at 80 m a minute with 15% added for crowds.</li>
+<li><b>Crowd and queue</b> come from check-ins. Each time a visitor taps “I’ve arrived”, ATHAR counts them at that place for the next 30 minutes and asks how busy it is. For later in the day, ATHAR expects lunch (12:15–14:15) and dinner (18:30–20:30) peaks, the 20 minutes before an event starts, and busier Friday and Saturday evenings. In this prototype, other visitors’ check-ins are simulated.</li>
+<li><b>Your position and time</b>: you are where you last tapped “I’ve arrived” (or your start gate). The clock starts when you tap “Start my day”, and every check-in re-times the rest of your plan.</li>
+<li><b>Help on the way</b> is worked out on your device from your plan. “Ask something” goes to the AI, which may only answer from the dataset.</li></ul></details>`}
+renderNow=function(){const el=$('rvNow');if(!el)return;const L=state.plan;if(!L.length){el.innerHTML='';return}
+ const r=sched(L,off(state.day)),i=L.findIndex(e=>!state.done.includes(e.id)),doneN=L.filter(e=>state.done.includes(e.id)).length;
+ const dots=`<div class="nw-prog" aria-label="${doneN} of ${L.length} stops visited">${L.map((e,k)=>`<button type="button" class="nw-dot${state.done.includes(e.id)?' dn':''}${k===i?' cur':''}" data-nvleg="${e.id}" title="${esc(e.title)}">${state.done.includes(e.id)?'✓':k+1}</button>`).join('<i></i>')}</div>`;
+ if(i<0){el.innerHTML=`<div class="nw nw-end"><div class="nw-main"><small>${state.days.length>1?'Day '+(state.day+1)+' complete':'All done'}</small><h3>You have visited every stop</h3><p class="nw-sub">Your visits are saved below in your Journey. Add photos and notes while they are fresh.</p></div>${dots}</div>`;return}
+ const c=ctx(),{e,leg,st,fromN,now,next}=c,fixed=state.fixed.includes(e.id)&&tmin(e)!=null,late=st&&st.cf?st.cf.late:0,h=state.nwHelp;
+ const chip=(k,t)=>`<button class="chip${h&&h.k===k?' selected':''}" data-nwask="${k}">${t}</button>`;
+ el.innerHTML=`<div class="nw"><div class="nw-main"><small>Next stop · ${i+1} of ${L.length}${doneN?' · '+doneN+' visited':''}</small>
+<h3>${esc(e.title)}</h3><p class="nw-sub">${esc(e.country)} · ${esc(e.type)} · from ${esc(fromN)}</p>
+<div class="nw-facts">${leg?`<div><span>Leave by</span><b>${fmt(leg.t)}</b></div><div><span>Walk</span><b>${leg.m} min</b><em>${fmtD(leg.d)}</em></div>`:''}<div><span>${fixed?'Event starts':'You arrive'}</span><b>${fmt(fixed?tmin(e):st.t)}</b></div><div><span>Crowd when you arrive</span><b class="cr-${(e.traffic||'Empty').toLowerCase()}">${e.traffic==='Crowded'?'Busy':e.traffic==='Moderate'?'Moderate':'Quiet'}</b><em class="fc">${e.wait?'~'+e.wait+' min queue · ':''}expected</em></div></div>
+${late?`<p class="nw-warn">At this pace you reach it about ${late} min after it starts. Tell ATHAR you are running late to see your options.</p>`:''}
+<div class="nw-acts"><button class="btn" data-nwgo="${i}">Show me the way</button><button class="btn secondary" data-nwarr="${e.id}">I’ve arrived</button>${next?`<span class="nw-then">Then: ${esc(next.title)}</span>`:''}</div></div>
+<div class="nw-help"><div class="ag-h"><b>ATHAR, on your route</b><small>You are at ${esc(fromN)} · ${window.tripNow&&tripNow()!=null?'now':'plan time'} ${fmt(now)}</small></div>
+<div class="nw-chips">${chip('late','Running late')}${chip('break','Need a break')}${chip('crowd','Too crowded')}${chip('skip','Skip this stop')}${chip('type','Ask something…')}</div>
+<div class="ag-body">${helpBody()}</div>
+<form class="nw-ask" id="nwForm" ${h&&h.k==='type'?'':'hidden'}><input id="nwInput" placeholder="For example: is there halal food near here?" aria-label="Ask ATHAR"/><button class="btn small" type="submit">Ask</button></form><div id="nwReply" class="nw-reply" hidden></div></div>${dots}${srcNote()}</div>`;
+ if(h&&h.k==='type'&&state.nwReply){const b=$('nwReply');b.hidden=false;b.innerHTML=state.nwReply}};
+// typed questions go to the AI; show only this answer, without internal ids
+nwWatch=function(){let n=0;const t=setInterval(()=>{const c=$('chatMessages');n++;if(!c)return clearInterval(t);
+ const fresh=[...c.children].slice(state.nwFrom).filter(b=>b.classList.contains('agent')&&!b.classList.contains('think')&&!b.classList.contains('pnote'));
+ if((!c.querySelector('.think')&&fresh.length)||n>130){clearInterval(t);
+  state.nwReply=fresh.length?fresh.map(b=>`<div class="nw-msg">${b.innerHTML.replace(/\s*\(id\s*\d+\)/gi,'')}</div>`).join(''):'<div class="nw-msg">ATHAR could not answer just now. Try again in a moment.</div>';
+  if(location.hash==='#journey')keepY(renderPlan);else renderNow()}},400)};
+function nwDo(op){if(op.t==='add'){const _p=state.pins;state.extra=[...new Set([...(state.extra||[]),op.id])];applyX(op);state.pins=_p.filter(x=>x!==op.id);sv()}else applyX(op);state.selected=firstOpen();state.pmMode='leg';state.pmView=null;state.nwHelp={k:'done',msg:op.msg};keepY(renderPlan);if(isApproved()&&window.jvSync){jvSync();keepY(renderJournal)}}
+window.addEventListener('click',e=>{const q=e.target.closest('[data-nwask],[data-nwlate],[data-nwdo],[data-nwundo]');if(!q||!q.closest('#rvNow'))return;
+ if(q.dataset.nwundo!=null){state.nwHelp=null;return} // the shared undo handler restores the plan
+ e.stopImmediatePropagation();e.preventDefault();
+ if(q.dataset.nwask){const k=q.dataset.nwask;state.nwHelp=state.nwHelp&&state.nwHelp.k===k&&!state.nwHelp.arg?null:{k};if(k!=='type')state.nwReply='';keepY(renderNow);if(k==='type'){const f=$('nwInput');if(f)f.focus()}}
+ else if(q.dataset.nwlate){state.nwHelp={k:'late',arg:+q.dataset.nwlate};keepY(renderNow)}
+ else if(q.dataset.nwdo!=null){const op=(state.nwOps||[])[+q.dataset.nwdo];if(op)nwDo(op)}},true);
+// checking in clears the last answer
+document.addEventListener('click',e=>{if(e.target.closest('[data-nwarr]'))state.nwHelp=null},true);
+if(location.hash==='#journey')renderPlan();
+})();
+</script>
+<style id="athar-journey-focus">
+/* Journey has two tabs: today's route and the journal */
+.jtabs-wrap{width:min(1060px,calc(100% - 40px));margin:28px auto 0}
+.jtabs{display:inline-flex;gap:4px;padding:4px;background:#eaefe8;border-radius:100px}
+.jtabs button{border:0;background:none;padding:9px 18px;border-radius:100px;font:inherit;font-weight:800;font-size:13.5px;color:#53655d;cursor:pointer}
+.jtabs button[aria-selected="true"]{background:#fff;color:var(--green);box-shadow:0 2px 8px rgba(20,54,48,.12)}
+.jtabs small{font-weight:700;color:#b4774f;margin-left:4px}
+#page-journal .rv-sep{display:none}
+#page-journal.jt-route #journalView,#page-journal.jt-journal #routeView{display:none}
+#page-journal .rv{padding-top:18px}
+#page-journal.jt-journal #journalView .jwrap{padding-top:18px}
+/* planning warnings belong in Ask ATHAR; the route stays on what to do next */
+#routeView #budget,#routeView #adjust,#routeView #liveNote{display:none}
+/* finished: the map and directions step aside */
+#routeView.rv-done #plannerMap,#routeView.rv-done #dayTabs:empty{display:none}
+/* step-by-step directions open on demand */
+#plannerMap:not(.steps-open) .nv-steps ol,#plannerMap:not(.steps-open) .nv-note{display:none}
+#plannerMap:not(.steps-open) .nv-steps-h{margin-bottom:0}
+.nv-stog{margin-left:auto;border:1px solid #cfd9d1;background:#fff;border-radius:100px;padding:6px 12px;font:inherit;font-size:12px;font-weight:800;color:var(--green);cursor:pointer}
+/* trip clock */
+.nw-clock{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.nw-clock b{font:800 13px Manrope,sans-serif;color:#1b2929}
+.nw-clock span{font-size:11.5px;font-weight:800;padding:3px 9px;border-radius:100px;background:#e3f1e6;color:#2d6a52}
+.nw-clock em.nw-leave{font-style:normal;font-size:12px;color:var(--muted)}
+.nw-clock span.late{background:#fbe9e4;color:#a2411c}.nw-clock span.early{background:#eef1ee;color:#53655d}
+.nw-start{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin:0 0 12px;padding:10px 12px;border-radius:14px;background:#f6f8f4;font-size:13px;color:#53655d}
+.ag-crowd{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.nw-done-acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+</style>
+<script id="athar-journey-focus-logic">
+/* ===== Journey, focused: route and journal tabs, a trip clock, and check-ins that drive the plan ===== */
+(function(){
+const esc=escapeHTML;
+/* ---------- trip clock: starts when you start your day; the plan follows your real time ---------- */
+// plan minutes = planned start + real minutes since you tapped "Start my day"
+window.tripNow=()=>state.trip?state.trip.p0+(Date.now()-state.trip.r0)/60000:null;
+function due(){const L=state.plan,d=state.day;if(!L.length)return null;const r=sched(L,off(d)),i=L.findIndex(e=>!state.done.includes(e.id));if(i<0)return null;
+ const e=L[i],leg=r.it.find(x=>x.k==='w'&&x.e===e),st=r.it.find(x=>x.k==='s'&&x.e===e);return{d,i,e,leg,st}}
+// minutes behind: past the time you were due at the next stop
+window.tripBehind=()=>{const n=tripNow(),c=due();return n==null||!c?0:Math.round(n-c.st.t)};
+const _psT=plSnap;plSnap=function(){return Object.assign(_psT(),{trip:state.trip||null,extra:state.extra||[]})};
+const _paT=plApply;plApply=function(s){_paT(s);state.trip=(s&&s.trip)||null;state.extra=(s&&s.extra)||[];state.nwHelp=null};
+{const s=PLANS&&plCur().snap;state.trip=(s&&s.trip)||null}
+const _apT=approvePlan;approvePlan=function(){state.trip=null;_apT()};
+function startTrip(p0){state.trip={r0:Date.now(),p0};plSaveNow()}
+document.addEventListener('click',e=>{if(!e.target.closest('[data-tripgo]'))return;const c=due();if(!c)return;
+ startTrip(c.leg?c.leg.t:c.st.t);state.stepsOpen=true;state.selected=c.i;state.pmMode='leg';state.pmView=null;keepY(renderPlan);toast('Your day has started. ATHAR follows your time from now.')});
+// checking in re-times the rest of the day from the moment you arrive
+document.addEventListener('click',e=>{const a=e.target.closest('[data-nwarr]');if(!a)return;const c=due();if(!c||c.e.id!==+a.dataset.nwarr)return;
+ if(!state.trip)startTrip(c.st.t);else{const delta=Math.round(tripNow()-c.st.t);if(Math.abs(delta)>=3)state.late[c.d]=off(c.d)+delta}
+ state.nwHelp={k:'arrived',id:c.e.id,t:Math.round(tripNow())};state.stepsOpen=false;
+ setTimeout(()=>{if(!state.days.flat().some(x=>!state.done.includes(x.id))){window.setJourneyTab('journal');scrollTo(0,0);toast('Every stop visited. Here is your journal.')}},0)},true);
+// the agent keeps an eye on the clock while your day is running
+setInterval(()=>{if(location.hash!=='#journey'||document.hidden||!state.trip)return;const a=document.activeElement;if(a&&a.closest&&a.closest('#rvNow form'))return;keepY(renderNow)},30000);
+// when you fall behind, ATHAR says so before you ask
+window.agentNudge=function(){const n=tripNow(),c=due();if(n==null||!c)return'';const{e,leg,st}=c,now=Math.round(n);
+ if(now>st.t+5){const b=Math.ceil((now-st.t)/5)*5;state.nwOps=[{t:'late',day:c.d,min:b,drop:[],msg:`Plan moved ${b} min later`}];
+  return`<div class="ag-card"><p>It is ${fmt(now)}. You were due at <b>${esc(e.title)}</b> at ${fmt(st.t)}. Still on your way?</p><div class="ag-acts"><button class="btn small" data-nwarr="${e.id}">I’m here now</button><button class="btn secondary small" data-nwdo="0">Move my plan ${b} min later</button><button class="btn secondary small" data-nwask="skip">Skip it</button></div></div>`}
+ if(leg&&now>leg.t+3)return`<div class="ag-card"><p>It is ${fmt(now)}. Leave now and you reach <b>${esc(e.title)}</b> at about ${fmt(now+leg.m)}${now+leg.m>st.t+5?', '+Math.round(now+leg.m-st.t)+' min later than planned':''}.</p></div>`;
+ return''};
+// after a check-in: one tap tells other visitors how busy it is
+window.arrivedCard=function(h){const e=EX(h.id);if(!e)return'';const rep=(crowdReports()[h.id]||{}).level;
+ return`<div class="ag-done"><span>✓ Checked in at ${esc(e.title)} at ${fmt(h.t)}</span></div><div class="ag-card" style="margin-top:8px">${rep?`<p>Thanks. Your check-in helps other visitors see how busy ${esc(e.title)} is.</p>`:`<p>How busy is it here?</p><div class="ag-crowd">${[['Empty','Quiet'],['Moderate','Moderate'],['Crowded','Busy']].map(([v,t])=>`<button class="chip" data-nwcrowd="${v}">${t}</button>`).join('')}</div>`}</div>`};
+const crowdReports=()=>{try{return JSON.parse(localStorage.getItem('athar.crowd')||'{}')}catch(_){return{}}};
+window.addEventListener('click',e=>{const b=e.target.closest('[data-nwcrowd]');if(!b||!state.nwHelp||state.nwHelp.k!=='arrived')return;e.stopImmediatePropagation();
+ const r=crowdReports();r[state.nwHelp.id]={level:b.dataset.nwcrowd,at:Date.now()};try{localStorage.setItem('athar.crowd',JSON.stringify(r))}catch(_){}keepY(renderNow)},true);
+
+/* the next-stop card: start button before the day begins, then the clock and how you are doing */
+const _rnT=renderNow;renderNow=function(){_rnT();const m=document.querySelector('#rvNow .nw-main');if(!m)return;const c=due();
+ if(!c){m.insertAdjacentHTML('beforeend',`<div class="nw-done-acts"><button class="btn" data-jtab="journal">Open my journal</button><button class="btn secondary" data-goplan>Plan another day</button></div>`);return}
+ const sm=m.querySelector('small'),n=tripNow();
+ if(n==null)sm.insertAdjacentHTML('beforebegin',`<div class="nw-start"><span>Ready at ${esc((c.leg&&c.leg.from?(c.leg.from.n||c.leg.from.title):'your start').split(' –')[0])}? ATHAR follows your time once you start.</span><button class="btn small" data-tripgo>Start my day</button></div>`);
+ else{const b=tripBehind(),lead=c.leg?Math.round(c.leg.t-n):0,s=(b>5?`<span class="late">${b} min behind</span>`:'<span>On time</span>')+(lead>2?`<em class="nw-leave">Leave at ${fmt(c.leg.t)}</em>`:'');
+  sm.insertAdjacentHTML('beforebegin',`<div class="nw-clock"><b>Now ${fmt(Math.round(n))}</b>${s}</div>`)}};
+
+/* ---------- tabs: today's route | my journal ---------- */
+const page=$('page-journal');
+if(page&&!document.querySelector('.jtabs-wrap')){const w=document.createElement('div');w.className='jtabs-wrap';
+ w.innerHTML=`<div class="jtabs" role="tablist" aria-label="Journey"><button role="tab" data-jtab="route">Today’s route</button><button role="tab" data-jtab="journal">My journal<small id="jtCount"></small></button></div>`;page.prepend(w)}
+const routeOpen=()=>isApproved()&&state.days.flat().some(e=>!state.done.includes(e.id));
+function setTab(t){state.jtab=t;if(!page)return;page.classList.toggle('jt-route',t==='route');page.classList.toggle('jt-journal',t==='journal');
+ page.querySelectorAll('[role="tab"][data-jtab]').forEach(b=>b.setAttribute('aria-selected',b.dataset.jtab===t));
+ // the journal follows the plan you have open
+ if(t==='journal'){if(window.jvFor&&PLANS&&state.jvPlan!==PLANS.active){state.jvPlan=PLANS.active;const J=jvFor(jvLoad());if(J)state.jid=J.id}renderJournal()}}
+window.setJourneyTab=setTab;
+document.addEventListener('click',e=>{const b=e.target.closest('[data-jtab]');if(!b)return;e.preventDefault();setTab(b.dataset.jtab);scrollTo(0,0)});
+// opening Journey shows the route while a day is in progress, otherwise the journal
+window.addEventListener('hashchange',()=>{if(location.hash==='#journey')window.setJourneyTab(routeOpen()?'route':'journal')});
+// opening the route from Ask ATHAR always lands on the route
+document.addEventListener('click',e=>{if(e.target.closest('[data-gojr]'))setTimeout(()=>window.setJourneyTab('route'),0)},true);
+const _rpT=renderPlan;renderPlan=function(){const r=_rpT.apply(this,arguments);const rv=$('routeView');
+ if(rv)rv.classList.toggle('rv-done',!!state.plan.length&&!state.plan.some(e=>!state.done.includes(e.id)));
+ const n=state.plan.filter(e=>state.done.includes(e.id)).length,k=$('jtCount');if(k)k.textContent=n?' · '+n+' visited':'';
+ const m=$('plannerMap');if(m)m.classList.toggle('steps-open',!!state.stepsOpen);return r};
+
+/* ---------- directions: one line until you ask for the steps ---------- */
+const _rmT=renderMap;renderMap=function(id){const r=_rmT.apply(this,arguments);if(id!=='plannerMap')return r;const m=$('plannerMap'),h=m&&m.querySelector('.nv-steps-h');
+ if(m)m.classList.toggle('steps-open',!!state.stepsOpen);if(h)h.insertAdjacentHTML('beforeend',`<button type="button" class="nv-stog" data-nvsteps aria-expanded="${!!state.stepsOpen}">${state.stepsOpen?'Hide steps':'Show steps'}</button>`);return r};
+document.addEventListener('click',e=>{if(e.target.closest('[data-nvsteps]')){state.stepsOpen=!state.stepsOpen;keepY(()=>renderMap('plannerMap',state.plan))}
+ else if(e.target.closest('[data-nwgo]'))state.stepsOpen=true},true);
+
+if(location.hash==='#journey'){setTab(routeOpen()?'route':'journal');renderPlan()}
+})();
+</script>
+<style id="athar-fit-and-tabs">
+/* over time: say it plainly next to the plan, with the two ways out */
+.pc-over{margin-top:12px;padding:12px 14px;border-radius:14px;background:#fbe9e4;color:#a2411c;font-size:13px}
+.pc-over b{display:block;font-size:13.5px}
+.pc-over span{display:block;color:#8a4a32;margin-top:2px}
+.pc-over .row{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px}
+.pc-over .btn{padding:8px 14px;font-size:12.5px}
+/* tab switch: a sliding marker and the new view easing in */
+.jtabs{position:relative}
+.jtabs button{position:relative;z-index:1;background:none!important;box-shadow:none!important}
+.jt-ind{position:absolute;top:4px;bottom:4px;left:4px;border-radius:100px;background:#fff;box-shadow:0 2px 8px rgba(20,54,48,.12);transition:left .3s cubic-bezier(.3,.7,.3,1),width .3s cubic-bezier(.3,.7,.3,1)}
+@keyframes jtFromRight{from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:none}}
+@keyframes jtFromLeft{from{opacity:0;transform:translateX(-28px)}to{opacity:1;transform:none}}
+#page-journal .jt-in-r{animation:jtFromRight .32s cubic-bezier(.3,.7,.3,1)}
+#page-journal .jt-in-l{animation:jtFromLeft .32s cubic-bezier(.3,.7,.3,1)}
+@media(prefers-reduced-motion:reduce){.jt-ind{transition:none}#page-journal .jt-in-r,#page-journal .jt-in-l{animation:none}}
+/* room under the directions before the footer */
+#page-journal #routeView{padding-bottom:72px}
+#plannerMap .nv-steps{padding-bottom:22px}
+</style>
+<script id="athar-fit-and-tabs-logic">
+/* ===== Over time makes sense everywhere, and the Journey tabs animate ===== */
+(function(){
+// the AI sometimes copies internal ids from its data rows; visitors never need them
+const _arId=addRich;addRich=function(t,acts){return _arId.call(this,typeof t==='string'?t.replace(/\s*\(\s*id\s*\d+\s*\)/gi,''):t,acts)};
+const esc=escapeHTML;
+// what fitting the day would mean: which optional stops go (never visited ones), or how much time to add
+function fitInfo(d){const l=state.days[d]||[],o=off(d),r=sched(l,o),over=Math.round(r.used-r.av);if(over<=5)return null;
+ let a=l.slice();const drop=[],fits=()=>{const q=sched(a,o);return q.used-q.av<=5};
+ for(const e of l.slice().reverse()){if(fits())break;if((state.extra||[]).includes(e.id)&&!state.done.includes(e.id)){drop.push(e.id);a=a.filter(x=>x!==e)}}
+ if(!fits())fitDrop(a,o).drop.filter(id=>!state.done.includes(id)).forEach(id=>drop.push(id));
+ return{d,over,drop:drop.map(EX).filter(Boolean),end:r.end}}
+window.fitInfo=fitInfo;
+window.fitActs=d=>{const f=fitInfo(d);if(!f)return[];return[...(f.drop.length?[{t:'Make it fit',a:'data-fit'}]:[]),{t:'Add '+addMin(f.over)+' min',a:'data-fitmore="'+addMin(f.over)+'"'}]};
+// Make it fit drops exactly what ATHAR said it would
+window.addEventListener('click',e=>{const b=e.target.closest('[data-fit]');if(!b)return;e.stopImmediatePropagation();e.preventDefault();const f=fitInfo(state.day);
+ if(!f)return toast('Your day already fits');if(!f.drop.length)return toast('Every stop left is one you picked. Add time instead, or remove a stop.');
+ const bx=b.closest('.acts');if(bx)bx.remove();state.nwHelp=null;applyX({t:'late',day:f.d,min:0,drop:f.drop.map(e=>e.id),msg:'Dropped '+f.drop.map(e=>e.title).join(' and ')+' so the day fits'});state.extra=(state.extra||[]).filter(id=>!f.drop.some(e=>e.id===id));sv()},true);
+const addMin=over=>Math.ceil(over/15)*15;
+const hrs=m=>{const h=Math.floor(m/60),r=Math.round(m%60);return r?(h?h+' h ':'')+r+' min':h+' hour'+(h===1?'':'s')};
+// "add time": a longer day instead of fewer stops
+document.addEventListener('click',e=>{const b=e.target.closest('[data-fitmore]');if(!b)return;e.preventDefault();const m=+b.dataset.fitmore;snapX();
+ state.minutes+=m;state.timeChosen=true;sv();plSaveSoon();renderPlan();const bx=b.closest('.acts');if(bx)bx.remove();
+ addRich(`Done: your day is now ${hrs(state.minutes)} long, so everything fits.`,[{t:'↶ Undo',a:'data-x="undo"'}]);toast('Added '+m+' min to your day')});
+// Ask ATHAR: the plan panel says when a day runs over, with both choices
+const _rapF=renderAskPlan;renderAskPlan=function(){_rapF();const el=$('askPlan');if(!el)return;
+ const boxes=state.days.map((_,d)=>fitInfo(d)).filter(Boolean).map(f=>`<div class="pc-over"><b>${state.days.length>1?'Day '+(f.d+1)+': ':''}${f.over} min over your ${hrs(state.minutes)}</b><span>The day ends at ${fmt(f.end)}. ${f.drop.length?'To fit, ATHAR would drop '+f.drop.map(e=>esc(e.title)).join(', ')+' (your picks and events stay).':'Every stop left is one you picked.'}</span><div class="row">${f.drop.length&&f.d===state.day?'<button class="btn small" data-fit>Make it fit</button>':''}<button class="btn secondary small" data-fitmore="${addMin(f.over)}">Add ${addMin(f.over)} min to my day</button></div></div>`).join('');
+ if(!boxes)return;const at=el.querySelector('.pc-acts,.pc-done');if(at)at.insertAdjacentHTML('beforebegin',boxes);else el.insertAdjacentHTML('beforeend',boxes)};
+// typed requests about time are answered from the plan itself
+const FIT=/\b(make it fit|fit (it|my|in)|too long|over ?time|overtime|running over|shorter|cut it down|less stops|fewer stops|too many stops)\b/i;
+const _gfF=generateFromText;generateFromText=function(m){const t=(m||'').trim();if(!FIT.test(t)||!state.days.flat().length)return _gfF.apply(this,arguments);
+ addMessage('user',t);const f=fitInfo(state.day);
+ if(!f){const r=sched(state.plan,off(state.day));addRich(`Your day already fits: it ends at ${fmt(r.end)}, within your ${hrs(state.minutes)}.`);return}
+ addRich(`Day ${f.d+1} ends at ${fmt(f.end)}, ${f.over} min past your ${hrs(state.minutes)}. `+(f.drop.length?`To fit, I would drop ${f.drop.map(e=>e.title).join(' and ')}. Your picks and events stay. Or I can add ${addMin(f.over)} min to your day instead.`:`Every stop left is one you picked, so I would rather add ${addMin(f.over)} min to your day.`),
+  [...(f.drop.length?[{t:'Make it fit',a:'data-fit'}]:[]),{t:'Add '+addMin(f.over)+' min',a:'data-fitmore="'+addMin(f.over)+'"'},{t:'Keep it',a:'data-ofr="no"'}])};
+// on the route: ATHAR mentions it when the day no longer fits
+const _nudgeF=window.agentNudge;window.agentNudge=function(){const a=_nudgeF?_nudgeF():'';if(a)return a;const f=fitInfo(state.day);if(!f)return'';
+ return`<div class="ag-card"><p>Your day now ends at ${fmt(f.end)}, ${f.over} min past the time you have.${f.drop.length?' To fit, I would drop '+f.drop.map(e=>'<b>'+esc(e.title)+'</b>').join(' and ')+'.':''}</p><div class="ag-acts">${f.drop.length?'<button class="btn small" data-fit>Make it fit</button>':''}<button class="btn secondary small" data-fitmore="${addMin(f.over)}">Add ${addMin(f.over)} min</button></div></div>`};
+
+/* ---------- Journey tabs: slide between today's route and the journal ---------- */
+const tabs=document.querySelector('.jtabs');let ind=null;
+if(tabs){ind=document.createElement('span');ind.className='jt-ind';ind.setAttribute('aria-hidden','true');tabs.prepend(ind)}
+function placeInd(){if(!ind)return;const b=tabs.querySelector('[aria-selected="true"]');if(!b||!b.offsetWidth)return;ind.style.left=b.offsetLeft+'px';ind.style.width=b.offsetWidth+'px'}
+const _stF=window.setJourneyTab;let last=null;
+window.setJourneyTab=function(t){_stF(t);placeInd();if(last&&last!==t){const v=t==='journal'?$('journalView'):$('routeView');if(v){v.classList.remove('jt-in-r','jt-in-l');void v.offsetWidth;v.classList.add(t==='journal'?'jt-in-r':'jt-in-l')}}last=t};
+// the tab clicks and automatic switches go through the animated version
+window.addEventListener('click',e=>{const b=e.target.closest('[data-jtab]');if(!b)return;e.preventDefault();e.stopImmediatePropagation();window.setJourneyTab(b.dataset.jtab);scrollTo(0,0)},true);
+window.addEventListener('resize',placeInd);window.addEventListener('hashchange',()=>setTimeout(placeInd,0));
+document.addEventListener('animationend',e=>{if(e.target.classList)e.target.classList.remove('jt-in-r','jt-in-l')});
+if(location.hash==='#journey'){last=document.getElementById('page-journal').classList.contains('jt-journal')?'journal':'route';placeInd()}
+})();
+</script>
+<script id="athar-plan-builder">
+/* ===== Plans fit the visitor: their hours, start time, date, interests, countries and pace =====
+   Events keep their real times from the dataset and are only chosen when they fall inside the
+   visitor's window. Gaps are filled with places that are open at that moment. The plan must end
+   within the hours the visitor gave. */
+(function(){
+const MEAL=['Restaurant','Casual Dining','Food Stall','Food Market'],SNACK=['Coffee Shop','Tea House','Dessert Shop'];
+const toMin=v=>{const m=String(v||'').match(/^(\d{1,2}):(\d\d)/);return m?+m[1]*60+ +m[2]:null};
+// quick timing for building (straight-line walk with a margin); the real walkway timing checks the result
+const walk=(a,b)=>Math.max(2,Math.round(legMin(a,b)*1.35));
+const stay=e=>Math.round(e.duration*PF())+(e.wait||0);
+function sim(list,t0,end){if(!list.length)return{end:t0,ok:true};let t=t0,pos=gateFor(list[0]);
+ for(const e of list){t+=walk(pos,e);
+  if(e.ev){const T=tmin(e);if(T==null||t>T-5)return{ok:false};t=Math.max(t,T)}
+  else{const o=toMin(e.open),c=toMin(e.close);if(o!=null&&t<o)t=o;if(c!=null&&t+Math.round(e.duration*PF())>c)return{ok:false}}
+  t+=stay(e);pos=e}
+ return{end:t,ok:t<=end+5}}
+const hay=e=>dsWant(e)*10+(e.rating||4)*2-(e.wait||0)*1.5;
+function buildDay(d,used){const iso=planDate(d),t0=state.start,end=t0+state.minutes,intF=state.interests.length>0,cs=state.countries;
+ const evOK=!intF||state.interests.some(c=>EVCAT.includes(c));
+ const foodPref=state.interests.filter(c=>['Food','Coffee & Tea','Desserts'].includes(c));
+ // 1. events on this date that start and finish inside the visitor's window
+ const evs=evOK?experiences.filter(e=>e.ev&&e.date===iso&&!used.has(e.id)&&tmin(e)!=null&&tmin(e)>=t0+5&&tmin(e)+e.duration<=end&&(!(intF||cs.length)||dsWant(e)>0)).sort((a,b)=>hay(b)-hay(a)||tmin(a)-tmin(b)):[];
+ let list=[];const maxEv=Math.max(1,Math.min(5,Math.floor(state.minutes/70)));
+ for(const e of evs){if(list.filter(x=>x.ev).length>=maxEv)break;const nl=list.concat(e).sort((a,b)=>tmin(a)-tmin(b));if(sim(nl,t0,end).ok)list=nl}
+ // 2. fill the time around them with open places that suit the visitor
+ const pool=experiences.filter(e=>!e.ev&&!used.has(e.id)&&toMin(e.close)>t0+20&&toMin(e.open)<end-20&&(!foodPref.length||!intF||dsCats(e).some(c=>foodPref.includes(c))||MEAL.includes(e.type)))
+  .sort((a,b)=>hay(b)-hay(a)).slice(0,90)
+  .concat(experiences.filter(e=>e.ev&&e.date===iso&&!used.has(e.id)&&!list.includes(e)&&tmin(e)!=null&&tmin(e)>=t0+5&&tmin(e)+e.duration<=end));
+ const cap=Math.max(1,Math.min(7,Math.round(state.minutes/60)));
+ const timesOf=l=>{let t=t0,pos=gateFor(l[0]);return l.map(e=>{t+=walk(pos,e);if(e.ev)t=Math.max(t,tmin(e));else{const o=toMin(e.open);if(o!=null&&t<o)t=o}const at=t;t+=stay(e);pos=e;return at})};
+ while(list.length<cap){let best=null;const base=sim(list,t0,end).end;
+  for(const e of pool){if(list.includes(e))continue;
+   const sameType=list.filter(x=>x.type===e.type).length,meals=list.filter(x=>MEAL.includes(x.type)).length;
+   if(MEAL.includes(e.type)&&meals>=Math.max(1,Math.floor(state.minutes/240)))continue;
+   const isSnack=x=>!x.ev&&!MEAL.includes(x.type)&&(SNACK.includes(x.type)||/caf[eé]|bakery|p[aâ]tisserie/i.test(x.type+' '+x.title)),snacks=list.filter(isSnack).length;
+   if(isSnack(e)&&snacks>=Math.max(1,Math.floor(state.minutes/200))+(foodPref.length?1:0))continue;
+   const brand=w=>String(w.title).split(' ')[0].toLowerCase();if(list.some(x=>!x.ev&&brand(x)===brand(e)))continue;
+   for(let i=0;i<=list.length;i++){const nl=list.slice();nl.splice(i,0,e);const r=sim(nl,t0,end);if(!r.ok)continue;
+    const at=timesOf(nl)[i],lunch=at>=12*60&&at<=14*60+30,dinner=at>=18*60&&at<=20*60+30;
+    const fitMeal=MEAL.includes(e.type)?(lunch||dinner?25:-20):SNACK.includes(e.type)?(lunch?-8:6):0;
+    const newCountry=cs.length&&cs.includes(e.country)&&!list.some(x=>x.country===e.country)?30:0;
+    const other=e.ev&&dsWant(e)===0&&(intF||cs.length)?-15:0;
+    const s=hay(e)+fitMeal+newCountry+other-sameType*25-(r.end-base)*.35;
+    if(!best||s>best.s)best={s,nl}}}
+  if(!best)break;list=best.nl}
+ list.forEach(e=>used.add(e.id));return list}
+buildX=function(){const days=[],used=new Set();state.dates=[];
+ for(let d=0;d<state.ndays;d++){state.dates.push(planDate(d));days.push(buildDay(d,used))}
+ // check with the real walkway timing; drop the weakest stop until the day fits (events only if nothing else is left)
+ const keep=state.fixed;
+ const fc=(l,d)=>{if(!window.crowdAt)return;for(let p=0;p<2;p++)sched(l,0).it.forEach(x=>{if(x.k!=='s')return;const e=x.e;if(e.baseT==null){e.baseT=e.traffic;e.baseW=e.wait}const f=crowdAt(e,x.t,d);e.traffic=f.level;e.wait=f.wait})};
+ days.forEach((l,d)=>{for(let k=0;k<12;k++){state.fixed=l.filter(e=>e.ev).map(e=>e.id);fc(l,d);const r=sched(l,0);
+  // late for an event (by the real walkways): drop the place visited just before it
+  const late=r.it.find(x=>x.k==='s'&&x.e.ev&&x.t>tmin(x.e)+1);if(late){const i=l.indexOf(late.e),prev=l.slice(0,i).reverse().find(e=>!e.ev);if(prev){l.splice(l.indexOf(prev),1);continue}}
+  if(r.used<=r.av+5&&!r.it.some(x=>x.cf))break;
+  const pool=l.some(e=>!e.ev)?l.filter(e=>!e.ev):l;const w=pool.slice().sort((a,b)=>hay(a)-hay(b))[0];l.splice(l.indexOf(w),1)}});
+ state.fixed=keep;return days};
+
+/* "fill it": suggest places that fit the longest free time, and ask before adding */
+const FILL=/\b(fill (it|the gap|that|my free time|the free time)|free time|empty time|nothing to do)\b/i;
+const _gfB=generateFromText;generateFromText=function(m){const t=(m||'').trim();if(!FILL.test(t)||!state.days.flat().length)return _gfB.apply(this,arguments);
+ addMessage('user',t);const d=state.day,l=state.days[d],r=sched(l,off(d)),w=r.it.filter(x=>x.k==='wait').sort((a,b)=>b.m-a.m)[0];
+ if(!w||w.m<25)return addRich('Your day has no long free time to fill.');
+ const i=l.indexOf(r.it[r.it.indexOf(w)+1].e),prev=i>0?l[i-1]:gateFor(l[0]),from=w.t,to=w.T;
+ const ids=experiences.filter(e=>whereX(e.id)<0&&(e.ev?tmin(e)!=null&&e.date===((state.dates||[])[d]||planDate(d))&&tmin(e)>=from+5&&tmin(e)+e.duration<=to-10:toMin(e.open)<=from+10&&toMin(e.close)>=to))
+  .map(e=>({e,s:hay(e)-legMin(prev,e)*2-(e.ev?0:Math.max(0,Math.round(e.duration*PF())-(to-from-15))*3)})).sort((a,b)=>b.s-a.s).slice(0,3).map(x=>x.e.id);
+ if(!window.offer||!window.offer(ids,'For your free time from '+fmt(from)+' to '+fmt(to)+', these fit:'))addRich('I could not find anything that fits between '+fmt(from)+' and '+fmt(to)+'.')};
+
+/* the proposal says what the plan really is: its times, its events and that it fits */
+const hrs=m=>{const h=Math.floor(m/60),r=Math.round(m%60);return r?(h?h+' h ':'')+r+' min':h+' hour'+(h===1?'':'s')};
+jvSummary=function(){const D=state.days,n=D.flat().length;if(!n)return'I could not fit anything for those choices. Try more hours, another date or different interests.';
+ const parts=D.map((l,d)=>{const r=sched(l,off(d)),ev=r.it.filter(x=>x.k==='s'&&x.e.ev).map(x=>x.e.title+' at '+fmt(tmin(x.e)));
+  return`${D.length>1?'Day '+(d+1)+(dateLbl(d)?' ('+dateLbl(d)+')':'')+': ':(dateLbl(d)?dateLbl(d)+', ':'')}${l.length} stop${l.length===1?'':'s'} from ${fmt(state.start+off(d))} to ${fmt(r.end)}${r.used>r.av+5?', '+Math.round(r.used-r.av)+' min over your time':''}${ev.length?'. Events at their set times: '+ev.join(', '):''}`});
+ const why=D.map((l,d)=>{const r=sched(l,off(d)),free=Math.round(r.av-r.used);if(l.some(e=>e.ev)||!state.interests.some(c=>EVCAT.includes(c))&&!state.countries.length)return free>=60?`Day ${d+1} still has about ${hrs(free)} free.`:'';
+  const iso=(state.dates||[])[d]||planDate(d),t1=state.start+state.minutes,nx=experiences.filter(e=>e.ev&&e.date===iso&&tmin(e)!=null&&dsWant(e)>0&&tmin(e)>=state.start).sort((a,b)=>tmin(a)-tmin(b))[0];
+  return nx&&tmin(nx)>=t1?`No ${state.interests.filter(c=>EVCAT.includes(c)).join(' or ')||'matching'} event starts inside your time${D.length>1?' on day '+(d+1):''}. The first one that day is ${nx.title} at ${fmt(tmin(nx))}: I can start your day later or add time to include it.`:''}).filter(Boolean).join(' ');
+ const gaps=D.map((l,d)=>{const w=sched(l,off(d)).it.filter(x=>x.k==='wait'&&x.m>=40).sort((a,b)=>b.m-a.m)[0];return w?`You have ${hrs(w.m)} free before ${fmt(w.T)}; I left it open to explore, or ask me to fill it.`:''}).filter(Boolean).join(' ');
+ return`Here is my proposal for your ${hrs(state.minutes)}${D.length>1?' a day':''}${state.pace==='relaxed'?' at a relaxed pace':''}. ${parts.join('. ')}.${why?' '+why:''}${gaps?' '+gaps:''} Tell me what to change, or approve it and I will prepare your route.`};
+})();
+</script>
+<script id="athar-final-fixes">
+/* ===== Final fixes: food requests in the chat, days that start with a later event, multi-day routes ===== */
+(function(){
+const esc=escapeHTML,toMin=v=>{const m=String(v||'').match(/^(\d{1,2}):(\d\d)/);return m?+m[1]*60+ +m[2]:null};
+/* 1. "add a coffee stop", "I need lunch"… : places of that kind that are open and fit the day, asked before adding */
+const KIND=[[/\b(coffee|cafe|café|espresso|latte)\b/i,['Coffee Shop'],'coffee'],[/\btea\b/i,['Tea House'],'tea'],[/\b(dessert|sweet|cake|ice cream)\b/i,['Dessert Shop'],'dessert'],
+ [/\b(lunch|dinner|meal|restaurant|eat|food|hungry)\b/i,['Restaurant','Casual Dining','Food Stall','Food Market'],'food'],[/\b(break|snack|rest)\b/i,['Coffee Shop','Tea House','Dessert Shop'],'break']];
+const WANT=/\b(add|need|want|get|find|have|grab|fit in|squeeze)\b/i;
+const _gfK=generateFromText;generateFromText=function(m){const t=(m||'').trim(),k=KIND.find(([re])=>re.test(t));
+ if(!k||!WANT.test(t)||!state.days.flat().length||/\b(remove|delete|skip|swap|replace|instead of)\b/i.test(t)||countries.some(c=>t.toLowerCase().includes(c[0].toLowerCase())))return _gfK.apply(this,arguments);
+ addMessage('user',t);const d=state.day,l=state.days[d]||[],o=off(d),base=sched(l,o),keep=state.fixed;
+ const rows=experiences.filter(e=>!e.ev&&k[1].includes(e.type)&&whereX(e.id)<0&&!state.done.includes(e.id)).map(e=>{let best=null;
+   for(let i=0;i<=l.length;i++){if(i<l.length&&state.done.includes(l[i].id))continue;const nl=l.slice();nl.splice(i,0,e);const r=sched(nl,o),x=r.it.find(y=>y.k==='s'&&y.e===e);
+    if(r.it.some(y=>y.cf)||!x||fmt(x.t)<e.open||fmt(x.t+Math.round(e.duration*PF()))>e.close)continue;const add=Math.round(r.used-base.used);if(!best||add<best.add)best={add,at:x.t,over:Math.round(r.used-r.av)}}
+   return best&&{e,...best,s:(best.over>5?-200:0)-best.add*1.5+dsWant(e)*10+(e.rating||4)*3-(e.wait||0)}}).filter(Boolean).sort((a,b)=>b.s-a.s).slice(0,3);
+ state.fixed=keep;
+ if(!rows.length)return addRich(`I could not find a ${k[2]} place that is open and fits into Day ${d+1} without a time clash.`);
+ const fits=rows.every(r=>r.over<=5);
+ window.offer(rows.map(r=>r.e.id),`These ${k[2]} places fit Day ${d+1}${fits?' and keep it within your time':''} (around ${rows.map(r=>fmt(r.at)).join(', ')}):`)};
+
+/* 2. a day that only starts with a later event begins shortly before it, not at the morning start time */
+const _aaK=window.agentAdd;window.agentAdd=function(id,o){const n0=state.days.length,empty=!state.days.flat().length,r=_aaK(id,o);
+ if(r)state.days.forEach((l,d)=>{if((d<n0&&!empty)||!l.length||!l[0].ev||state.late[d])return;const e=l[0],T=tmin(e);if(T==null)return;
+  const g=gateFor(e),w=Math.max(3,Math.round(navLeg(g,e).m/80*state.busy)),shift=T-w-10-state.start;if(shift>=20){state.late[d]=shift;sv();renderPlan()}});
+ return r};
+
+/* 3. multi-day routes: finishing one day leads to the next, the journal comes after the last day */
+const nextDay=()=>state.days.findIndex((l,d)=>d!==state.day&&l.some(e=>!state.done.includes(e.id)));
+window.addEventListener('click',e=>{const a=e.target.closest('[data-nwarr]');if(!a)return;
+ setTimeout(()=>{if(state.plan.some(x=>!state.done.includes(x.id)))return;const n=nextDay();if(n<0)return;
+  window.setJourneyTab('route');toast(`Day ${state.day+1} complete. Day ${n+1} is ready when you are.`)},20)},true);
+const _rnK=renderNow;renderNow=function(){_rnK();const n=nextDay();if(n<0||state.plan.some(x=>!state.done.includes(x.id)))return;
+ const acts=document.querySelector('#rvNow .nw-done-acts');if(acts)acts.innerHTML=`<button class="btn" data-nwday="${n}">Go to Day ${n+1}</button><button class="btn secondary" data-jtab="journal">Open my journal</button>`;
+ const p=document.querySelector('#rvNow .nw-sub');if(p)p.textContent=`Your visits are saved in your journal. Day ${n+1} has ${state.days[n].length} stop${state.days[n].length===1?'':'s'}.`};
+document.addEventListener('click',e=>{const b=e.target.closest('[data-nwday]');if(!b)return;state.day=+b.dataset.nwday;sync();state.trip=null;state.nwHelp=null;state.selected=0;state.pmMode='leg';state.pmView=null;sv();renderPlan();scrollTo(0,0)});
+})();
+</script>
 </body></html>
